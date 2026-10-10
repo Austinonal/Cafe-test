@@ -347,7 +347,9 @@
   }
 
   /* ---------- ③ Map ---------- */
-  let map = null, mapMarkers = [];
+  let map = null, mapMarkers = [], meMarker = null, meAcc = null;
+  const geo = { prov: '', area: '' };
+  const provOf = (c) => c.province || 'กรุงเทพฯ'; // shortcut: demo data is all Bangkok; add `province` to a café when real data arrives
   const mapFilters = new Set();
   const MAP_FILTERS = [
     ['mood', 'Mood วันนี้', (s, ctx) => ctx.moodTop.has(s.cafe.id)],
@@ -366,13 +368,15 @@
       '<button class="fchip' + (mapFilters.has(f[0]) ? ' on' : '') + '" data-act="toggle-filter" data-k="' + f[0] + '" aria-pressed="' + mapFilters.has(f[0]) + '">' + f[1] + '</button>').join('');
     return { nav: true, mount: initMap, html:
       '<header class="hero-top ambient compact"><div class="topbar between"><span class="brand">' + I('map', 20) + 'Map</span>' + weatherChip() + '</div>' +
-      '<div class="fchips" role="group" aria-label="ตัวกรองแผนที่">' + chips + '</div></header>' +
-      '<section class="map-wrap"><div id="map" class="map"></div><p id="mapCount" class="map-count" aria-live="polite"></p><div id="mapCard" class="pad tight"></div></section>' };
+      '<div class="fchips" role="group" aria-label="ตัวกรองแผนที่">' + chips + '</div>' + geoRow() + '</header>' +
+      '<section class="map-wrap"><div class="map-stage"><div id="map" class="map"></div><button class="locate-btn" id="locateBtn" data-act="locate-me" aria-label="หาตำแหน่งของฉัน">' + I('navigation', 22) + '</button></div><p id="mapCount" class="map-count" aria-live="polite"></p><div id="mapCard" class="pad tight"></div></section>' };
   }
 
   function initMap() {
     const box = $('#map');
     if (!box) return;
+    meMarker = meAcc = null;
+    bindGeoRow();
     if (!window.L) { box.innerHTML = '<div class="map-fallback">' + I('map', 28) + '<p>ต้องต่ออินเทอร์เน็ตเพื่อโหลดแผนที่</p><a class="btn ghost" href="#/discover">ดูเป็นรายการแทน</a></div>'; return; }
     const c = center();
     map = L.map(box, { zoomControl: true, dragging: true, tap: true, scrollWheelZoom: true, touchZoom: true, doubleClickZoom: true, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([c.lat, c.lon], 12);
@@ -380,8 +384,61 @@
     let tileFail = 0;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map)
       .on('tileerror', () => { if (++tileFail === 3) box.insertAdjacentHTML('afterend', '<p class="map-note" role="status">โหลดพื้นแผนที่ไม่ได้ — OpenStreetMap ต้องเปิดผ่านเว็บ https (เช่น GitHub Pages) หรือ localhost ถ้าเปิดไฟล์ตรง ๆ หรืออยู่ในหน้าตัวอย่างจะเห็นแต่หมุด</p>'); });
-    L.marker([c.lat, c.lon], { icon: L.divIcon({ className: '', html: '<div class="me-dot"></div>', iconSize: [18, 18] }), interactive: false, keyboard: false }).addTo(map);
+    const loc0 = S.get().location;
+    if (loc0.source === 'gps') showMe(loc0);
     drawMarkers(true);
+  }
+
+  /* province / district filter (selects: native, work well on mobile) */
+  function geoRow() {
+    const opt = (v, t, cur) => '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(t) + '</option>';
+    const provs = Array.from(new Set(D.CAFES.map(provOf))).sort((a, b) => a.localeCompare(b, 'th'));
+    const cnt = {};
+    D.CAFES.filter((c) => !geo.prov || provOf(c) === geo.prov).forEach((c) => { cnt[c.area] = (cnt[c.area] || 0) + 1; });
+    const areas = Object.keys(cnt).sort((a, b) => a.localeCompare(b, 'th'));
+    return '<div class="geo-row">' +
+      '<label><span>จังหวัด</span><select id="geoProv">' + opt('', 'ทุกจังหวัด', geo.prov) + provs.map((v) => opt(v, v, geo.prov)).join('') + '</select></label>' +
+      '<label><span>เขต / ย่าน</span><select id="geoArea">' + opt('', 'ทุกเขต / ย่าน', geo.area) + areas.map((v) => opt(v, v + ' (' + cnt[v] + ')', geo.area)).join('') + '</select></label></div>';
+  }
+
+  function bindGeoRow() {
+    const pv = $('#geoProv'), ar = $('#geoArea');
+    if (!pv || !ar) return;
+    pv.onchange = () => { geo.prov = pv.value; geo.area = ''; const row = $('.geo-row'); row.outerHTML = geoRow(); bindGeoRow(); drawMarkers(true); };
+    ar.onchange = () => { geo.area = ar.value; drawMarkers(true); };
+  }
+
+  /* my location on the map */
+  function showMe(l, acc) {
+    const ll = [l.lat, l.lon];
+    if (meMarker) meMarker.setLatLng(ll);
+    else meMarker = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="me-dot"></div>', iconSize: [18, 18] }), interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+    if (meAcc) { meAcc.remove(); meAcc = null; }
+    if (acc) meAcc = L.circle(ll, { radius: acc, color: '#1F5FBF', weight: 1, fillOpacity: .1, interactive: false }).addTo(map);
+  }
+
+  const getPos = (o) => new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, o));
+
+  async function locateMe(btn) {
+    if (!map) return;
+    if (!navigator.geolocation || !window.isSecureContext) { toast('เปิดแอปผ่าน https (เช่น GitHub Pages) ก่อนถึงจะหาตำแหน่งได้'); return; }
+    btn.disabled = true; btn.classList.add('busy');
+    try {
+      let p;
+      try { p = await getPos({ enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }); }
+      catch (e) { if (e.code === 1) throw e; p = await getPos({ enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }); } // shortcut: indoors GPS often times out, so retry once with network location
+      const l = { lat: p.coords.latitude, lon: p.coords.longitude, source: 'gps' };
+      S.patch({ location: l });
+      if (W.refresh) W.refresh().catch(() => {});
+      showMe(l, p.coords.accuracy);
+      map.setView([l.lat, l.lon], Math.max(map.getZoom(), 15), { animate: false });
+      btn.classList.add('on');
+      toast(E.distKm(l, D.DEMO_CENTER) > 40 ? 'พบตำแหน่งแล้ว แต่คาเฟ่ในแอปตอนนี้อยู่ในกรุงเทพฯ' : 'พบตำแหน่งของคุณแล้ว (±' + Math.round(p.coords.accuracy) + ' ม.)');
+    } catch (e) {
+      toast(e && e.code === 1 ? 'ยังไม่ได้อนุญาตตำแหน่ง — เปิดสิทธิ์ตำแหน่งของเบราว์เซอร์ในการตั้งค่า แล้วกดใหม่'
+        : e && e.code === 3 ? 'หาตำแหน่งนานเกินไป — ลองออกที่โล่งแล้วกดใหม่'
+        : 'หาตำแหน่งไม่เจอ — เปิด GPS ของเครื่องแล้วลองอีกครั้ง');
+    } finally { btn.disabled = false; btn.classList.remove('busy'); }
   }
 
   function drawMarkers(fit) {
@@ -391,7 +448,8 @@
     const ses = session();
     const all = D.CAFES.map((c) => E.scoreCafe(c, ses));
     const ctx = { moodTop: new Set(all.slice().sort((a, b) => b.match - a.match).slice(0, 6).map((s) => s.cafe.id)) };
-    const shown = all.filter((s) => Array.from(mapFilters).every((k) => MAP_FILTERS.find((f) => f[0] === k)[2](s, ctx)));
+    const shown = all.filter((s) => Array.from(mapFilters).every((k) => MAP_FILTERS.find((f) => f[0] === k)[2](s, ctx)) &&
+      (!geo.prov || provOf(s.cafe) === geo.prov) && (!geo.area || s.cafe.area === geo.area));
     shown.forEach((s) => {
       const gem = s.hidden.eligible && s.hidden.score >= 80;
       const m = L.marker([s.cafe.lat, s.cafe.lon], {
@@ -403,7 +461,7 @@
     });
     $('#mapCount').textContent = all.length ? 'แสดง ' + shown.length + ' จาก ' + all.length + ' ร้าน · เลขบนหมุด = Match วันนี้' : 'ยังไม่มีคาเฟ่ในระบบ';
     $('#mapCard').innerHTML = shown.length || !all.length ? '' : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ลองปิดตัวกรองบางอัน</p></div>';
-    if (fit && shown.length) map.fitBounds(L.latLngBounds(shown.map((s) => [s.cafe.lat, s.cafe.lon]).concat([[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
+    if (fit && shown.length) map.fitBounds(L.latLngBounds(shown.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
   }
 
   function vResults() {
@@ -1040,6 +1098,7 @@
       refreshHome();
       $('#today').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     },
+    'locate-me': (el) => locateMe(el),
     'toggle-filter': (el) => {
       const k = el.dataset.k;
       if (mapFilters.has(k)) mapFilters.delete(k); else mapFilters.add(k);
