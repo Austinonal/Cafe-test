@@ -120,6 +120,7 @@
   }
 
   function isOpen(cafe, hour) {
+    if (cafe.force) return cafe.force === 'open';   // owner override from Café Studio ('open' | 'closed')
     const [o, c] = cafe.hours;
     return (hour >= o && hour < c) || (hour + 24 >= o && hour + 24 < c);
   }
@@ -131,6 +132,7 @@
 
   function openInfo(cafe, hour) {
     const open = isOpen(cafe, hour);
+    if (cafe.force) return open ? { open: true, text: 'เปิดอยู่ · ร้านอัปเดตเอง' } : { open: false, text: 'ปิดชั่วคราว' };
     return open
       ? { open: true, text: 'เปิดอยู่ · ปิด ' + fmtHour(cafe.hours[1]) }
       : { open: false, text: 'ปิดอยู่ · เปิด ' + fmtHour(cafe.hours[0]) };

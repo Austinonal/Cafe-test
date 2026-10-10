@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Café Mood — สร้างรหัสผู้พัฒนาแบบเข้ารหัส</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:560px;margin:32px auto;padding:0 20px;color:#2a1d14}input,button,textarea{font:inherit;width:100%;padding:12px;margin:6px 0 12px;border:1px solid #c9b8a4;border-radius:12px;box-sizing:border-box}button{background:#b0502a;color:#fff;border:0;cursor:pointer}textarea{font:13px/1.5 ui-monospace,Consolas,monospace}small{color:#7a6657}</style></head>
+<body>
+<h1>สร้างรหัสผู้พัฒนาแบบเข้ารหัส</h1>
+<p>พิมพ์รหัสที่ต้องการ แล้วคัดลอก 2 บรรทัดที่ได้ไปวางใน <b>js/dev-config.js</b> (เว้นช่อง passcode ว่างไว้) หน้านี้ทำงานในเครื่องคุณ ไม่ส่งรหัสไปไหน</p>
+<label for="p">รหัสผู้พัฒนา (อย่างน้อย 8 ตัวอักษร)</label><input id="p" type="password" autocomplete="new-password">
+<button id="go">สร้าง</button>
+<textarea id="out" rows="4" readonly placeholder="ผลลัพธ์จะขึ้นที่นี่"></textarea>
+<small>ใช้วิธีเดียวกับในแอป (PBKDF2-SHA256 100,000 รอบ) ต้องเปิดผ่าน https, localhost หรือดับเบิลคลิกไฟล์ใน Chrome/Edge</small>
+<script>
+const hex = (b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join('');
+document.getElementById('go').onclick = async () => {
+  const p = document.getElementById('p').value, out = document.getElementById('out');
+  if (p.length < 8) { out.value = 'รหัสต้องมีอย่างน้อย 8 ตัวอักษร'; return; }
+  if (!window.crypto || !crypto.subtle) { out.value = 'เบราว์เซอร์นี้ไม่รองรับ — เปิดผ่าน https หรือ localhost'; return; }
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16))), enc = new TextEncoder();
+  const k = await crypto.subtle.importKey('raw', enc.encode(p), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: enc.encode(salt), iterations: 100000, hash: 'SHA-256' }, k, 256);
+  out.value = "salt: '" + salt + "',\nhash: '" + hex(bits) + "',";
+};
+</script></body></html>

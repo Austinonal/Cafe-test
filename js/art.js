@@ -24,6 +24,7 @@
   }
 
   function coverArt(cafe, cls) {
+    if (cafe.banner) return '<img class="cover ' + (cls || '') + '" src="' + cafe.banner + '" alt="" style="object-fit:cover">';   // owner-uploaded banner (Café Studio)
     const g = nid('cg');
     const [c1, c2] = cafe.palette;
     return '<svg class="cover ' + (cls || '') + '" viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">' +
@@ -32,6 +33,7 @@
   }
 
   function drinkArt(drink) {
+    if (drink.photo) return '<img class="drink-art photo" src="' + escT(drink.photo) + '" alt="" loading="lazy">';   // photo uploaded by the owner
     const g = nid('dg');
     const [c1, c2] = drink.colors;
     const steam = '<g class="steam" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".45">' +
@@ -57,20 +59,46 @@
       '</svg>';
   }
 
-  // Passport stamp for a café. rot = deterministic tilt.
+  const escT = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Passport stamp for a café. rot = deterministic tilt. cafe.pass = the owner's design { label, color, shape, icon } (Café Studio).
+  const SHAPES = {
+    circle: ['<circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="3"/>', '<circle cx="50" cy="50" r="39" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 4"/>'],
+    square: ['<rect x="6" y="6" width="88" height="88" rx="18" fill="none" stroke="currentColor" stroke-width="3"/>', '<rect x="14" y="14" width="72" height="72" rx="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 4"/>'],
+    hex: ['<polygon points="50,4 90,27 90,73 50,96 10,73 10,27" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>', '<polygon points="50,14 81,32 81,68 50,86 19,68 19,32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 4" stroke-linejoin="round"/>']
+  };
   function stamp(cafe, opts) {
     opts = opts || {};
-    const col = opts.locked ? 'currentColor' : cafe.palette[0];
-    const initials = cafe.name.replace(/[^A-Za-z฀-๿ ]/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+    const d = cafe.pass || {};
+    const col = opts.locked ? 'currentColor' : (d.color || cafe.palette[0]);
+    const label = String(d.label || '').trim();
+    const initials = label || cafe.name.replace(/[^A-Za-z฀-๿ ]/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
     const rot = Math.round((CM.engine.hash(cafe.id) - .5) * 24);
-    return '<svg class="stamp' + (opts.locked ? ' locked' : '') + '" viewBox="0 0 100 100" style="color:' + col + ';transform:rotate(' + rot + 'deg)" aria-hidden="true" focusable="false">' +
-      '<circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="3"/>' +
-      '<circle cx="50" cy="50" r="39" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 4"/>' +
-      (opts.locked ? '' : '<text x="50" y="58" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-weight="700" font-size="26" fill="currentColor">' + initials + '</text>') +
-      (opts.locked ? '<path d="M38 56v-6a12 12 0 0 1 24 0v6M34 56h32v20H34z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>' :
-        '<path d="M26 72h48" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M30 32h40" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>') +
-      '</svg>';
+    const ring = SHAPES[d.shape] || SHAPES.circle;
+    const fs = initials.length <= 3 ? 26 : initials.length <= 5 ? 19 : 14;
+    let mid;
+    if (opts.locked) mid = '<path d="M38 56v-6a12 12 0 0 1 24 0v6M34 56h32v20H34z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>';
+    else if (d.icon) mid = '<g transform="translate(' + (label ? 35 : 30) + ' ' + (label ? 20 : 28) + ')">' + CM.icon(d.icon, label ? 30 : 40) + '</g>' + (label ? '<text x="50" y="76" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-weight="700" font-size="' + (fs > 19 ? 15 : 13) + '" fill="currentColor">' + escT(label) + '</text>' : '');
+    else mid = '<text x="50" y="58" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-weight="700" font-size="' + fs + '" fill="currentColor">' + escT(initials) + '</text><path d="M26 72h48" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M30 32h40" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+    return '<svg class="stamp' + (opts.locked ? ' locked' : '') + '" viewBox="0 0 100 100" style="color:' + escT(col) + ';transform:rotate(' + rot + 'deg)" aria-hidden="true" focusable="false">' + ring[0] + ring[1] + mid + '</svg>';
   }
 
-  CM.art = { coverArt, drinkArt, stamp, dominant };
+  /* ---- café logo: an uploaded image, or a ready-made pattern the owner customises { tpl, c1, c2, text } ---- */
+  const PATTERNS = {
+    stripe: (c) => [0, 1, 2, 3, 4, 5, 6, 7].map((i) => '<rect x="' + (i * 22 - 50) + '" y="-30" width="9" height="170" fill="' + c + '" transform="rotate(35 50 50)"/>').join(''),
+    dots: (c) => [0, 1, 2, 3, 4].map((i) => [0, 1, 2, 3, 4].map((j) => '<circle cx="' + (10 + i * 20) + '" cy="' + (10 + j * 20) + '" r="4.5" fill="' + c + '"/>').join('')).join(''),
+    wave: (c) => [22, 42, 62, 82].map((y) => '<path d="M-5 ' + y + ' Q20 ' + (y - 12) + ' 45 ' + y + ' T95 ' + y + ' T145 ' + y + '" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round"/>').join(''),
+    bean: (c) => [[25, 28, -30], [72, 34, 25], [30, 74, 20], [76, 76, -35]].map((b) => '<g transform="translate(' + b[0] + ' ' + b[1] + ') rotate(' + b[2] + ')"><ellipse rx="13" ry="18" fill="' + c + '"/><path d="M0 -17Q-6 0 0 17" stroke="rgba(0,0,0,.35)" stroke-width="2.5" fill="none"/></g>').join(''),
+    grid: (c) => [0, 1, 2, 3, 4].map((i) => [0, 1, 2, 3, 4].map((j) => ((i + j) % 2 ? '' : '<rect x="' + i * 20 + '" y="' + j * 20 + '" width="20" height="20" fill="' + c + '"/>')).join('')).join(''),
+    sun: (c) => Array.from({ length: 12 }, (_, i) => '<line x1="50" y1="50" x2="' + (50 + 80 * Math.cos(i * Math.PI / 6)) + '" y2="' + (50 + 80 * Math.sin(i * Math.PI / 6)) + '" stroke="' + c + '" stroke-width="7"/>').join('') + '<circle cx="50" cy="50" r="16" fill="' + c + '"/>'
+  };
+  const hexOk = (c) => (/^#[0-9a-fA-F]{6}$/.test(c) ? c : '#5B3A22');
+  function logoFromT(t, cls) {
+    const id = nid('lg'), c1 = hexOk(t.c1), c2 = hexOk(t.c2), text = String(t.text || '').trim().slice(0, 3), pat = (PATTERNS[t.tpl] || PATTERNS.stripe)(c2);
+    return '<svg class="logo ' + (cls || '') + '" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><defs><clipPath id="' + id + '"><rect width="100" height="100" rx="24"/></clipPath></defs>' +
+      '<g clip-path="url(#' + id + ')"><rect width="100" height="100" fill="' + c1 + '"/><g opacity=".5">' + pat + '</g></g>' +
+      (text ? '<text x="50" y="62" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-weight="700" font-size="' + (text.length > 2 ? 30 : 38) + '" fill="#fff" stroke="' + c1 + '" stroke-width="5" paint-order="stroke">' + escT(text) + '</text>' : '') + '</svg>';
+  }
+  const logoArt = (cafe, cls) => (cafe.logo ? '<img class="logo ' + (cls || '') + '" src="' + escT(cafe.logo) + '" alt="">' : cafe.logoT ? logoFromT(cafe.logoT, cls) : '');
+
+  CM.art = { coverArt, drinkArt, stamp, dominant, logoArt, logoFromT };
 })();

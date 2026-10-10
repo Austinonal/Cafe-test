@@ -20,6 +20,10 @@
   function status() {
     const s = sub(), now = Date.now();
     if (s.plan === 'plus' && s.endsAt && s.endsAt <= now) { s.plan = 'free'; s.endsAt = 0; s.cancelled = false; S.save(); }
+    if (s.grant && s.grant.until && s.grant.until <= now) { s.grant = null; if (!s.endsAt && s.trialEnd <= now) s.plan = 'free'; S.save(); }
+    const pu = CM.ent ? CM.ent.plusUntil() : null;
+    if (pu !== null && !s.grant) return { plus: true, granted: true, until: pu, trialing: false, cancelled: false, period: 'year', amount: 0, next: pu, endsAt: 0, day: 1, daysLeft: 0 };
+    if (s.grant) return { plus: true, granted: true, until: s.grant.until, trialing: false, cancelled: false, period: 'year', amount: 0, next: s.grant.until, endsAt: 0, day: 1, daysLeft: 0 };
     if (s.plan !== 'plus') return { plus: false };
     const trialing = s.trialEnd > now;
     let next = s.trialEnd;
@@ -76,13 +80,13 @@
   function manage(st) {
     const s = sub();
     const trialBar = st.trialing ? '<div class="progress" role="progressbar" aria-label="วันที่ทดลองใช้" aria-valuemin="0" aria-valuemax="' + TRIAL_DAYS + '" aria-valuenow="' + st.day + '"><span style="width:' + st.day / TRIAL_DAYS * 100 + '%"></span></div><p class="muted small">ทดลองใช้ วันที่ ' + st.day + ' จาก ' + TRIAL_DAYS + '</p>' : '';
-    const line = st.cancelled
+    const line = st.granted ? '<p class="small">ใช้ Plus ฟรี <b>' + (st.until ? 'ถึง ' + fmt(st.until) : 'ตลอดไป') + '</b> จากรหัสของผู้พัฒนา — ไม่มีการเรียกเก็บเงิน</p>' : st.cancelled
       ? '<p class="small">ยกเลิกแล้ว — ใช้ Plus ได้ถึง <b>' + fmt(st.endsAt) + '</b> และจะไม่มีการเรียกเก็บเงิน</p>'
       : '<p class="small">' + (st.trialing ? 'เรียกเก็บครั้งแรก' : 'ต่ออายุครั้งถัดไป') + ' <b>' + fmt(st.next) + '</b> · ฿' + st.amount + ' / ' + (st.period === 'year' ? 'ปี' : 'เดือน') + '<br><span class="muted">เราจะเตือนคุณก่อน 2 วัน</span></p>';
     return { nav: false, html:
       '<header class="hero-top ambient plus-hero"><div class="topbar">' + api.backBtn('#/profile') + '</div><p class="eyebrow">Café Mood Plus</p><h1 class="display">คุณเป็นสมาชิก Plus</h1></header>' +
       '<section class="pad rise"><div class="card">' + trialBar + line +
-      (st.cancelled ? '<button class="btn primary block" data-act="plus-resume">ต่ออายุ Plus</button>'
+      (st.granted ? '' : st.cancelled ? '<button class="btn primary block" data-act="plus-resume">ต่ออายุ Plus</button>'
         : '<div class="row2"><button class="btn ghost" data-act="plus-switch">เปลี่ยนเป็น' + (st.period === 'year' ? 'รายเดือน' : 'รายปี (ประหยัด ' + SAVE + '%)') + '</button><button class="btn text" data-act="plus-cancel">ยกเลิก</button></div>') + '</div>' +
       '<ul class="feat">' + FEATURES.map((f) => '<li><span class="feat-ic">' + I(f[0], 22) + '</span><div><b>' + f[1] + '</b><small>' + f[2] + '</small></div></li>').join('') + '</ul>' +
       '<a class="btn ghost block" href="#/wrapped">เปิด Café Wrapped</a></section>' };
@@ -90,7 +94,7 @@
 
   /* ---------- Café Wrapped (Plus) ---------- */
   function wrappedData() {
-    const vs = S.get().visits, st = E.stats(vs), mh = S.get().moodHistory || {};
+    const vs = S.live(), st = E.stats(vs), mh = S.get().moodHistory || {};
     const byCafe = {};
     vs.forEach((v) => { byCafe[v.cafeId] = (byCafe[v.cafeId] || 0) + 1; });
     const topCafe = Object.keys(byCafe).sort((a, b) => byCafe[b] - byCafe[a])[0];
@@ -120,7 +124,7 @@
   /* ---------- fragments used by Profile / Passport ---------- */
   function profileCard() {
     const st = status();
-    if (st.plus) return '<a class="card plus-card on" href="#/plus"><span class="feat-ic">' + I('sparkles', 22) + '</span><div><b>Café Mood Plus ' + (st.trialing ? '· ทดลองวันที่ ' + st.day + '/' + TRIAL_DAYS : st.cancelled ? '· สิ้นสุด ' + fmt(st.endsAt) : '') + '</b><small>จัดการสมาชิก</small></div>' + I('chevron-right', 18) + '</a>';
+    if (st.plus) return '<a class="card plus-card on" href="#/plus"><span class="feat-ic">' + I('sparkles', 22) + '</span><div><b>Café Mood Plus ' + (st.granted ? '· ฟรี' + (st.until ? ' ถึง ' + fmt(st.until) : ' ตลอดไป') : st.trialing ? '· ทดลองวันที่ ' + st.day + '/' + TRIAL_DAYS : st.cancelled ? '· สิ้นสุด ' + fmt(st.endsAt) : '') + '</b><small>จัดการสมาชิก</small></div>' + I('chevron-right', 18) + '</a>';
     return '<a class="card plus-card" href="#/plus"><span class="feat-ic">' + I('sparkles', 22) + '</span><div><b>Café Mood Plus</b><small>Wrapped · Mood Journal · เตือนอัจฉริยะ — ทดลองฟรี ' + TRIAL_DAYS + ' วัน</small></div>' + I('chevron-right', 18) + '</a>';
   }
 
@@ -128,7 +132,7 @@
     const mh = S.get().moodHistory || {}, plus = isPlus();
     const keys = Object.keys(mh).sort((a, b) => mh[b] - mh[a]).slice(0, 5), tot = keys.reduce((s, k) => s + mh[k], 0) || 1;
     if (!plus) return '<h2 class="sec-title">' + I('eye', 20) + 'Mood Journal</h2><div class="card lock-card">' + I('lock', 22) + '<div><b>ดูว่า Mood และอากาศพาคุณไปคาเฟ่แบบไหน</b><p class="muted small">เป็นของ Plus</p></div><a class="btn primary sm" href="#/plus">ลองฟรี</a></div>';
-    const w = {}; S.get().visits.forEach((v) => { const k = v.weather && (v.weather.night && v.weather.kind !== 'rain' ? 'night' : v.weather.kind); if (k) w[k] = (w[k] || 0) + 1; });
+    const w = {}; S.live().forEach((v) => { const k = v.weather && (v.weather.night && v.weather.kind !== 'rain' ? 'night' : v.weather.kind); if (k) w[k] = (w[k] || 0) + 1; });
     const WT = { rain: 'ฝนตก', sunny: 'แดดดี', cloudy: 'ครึ้มฟ้า', hot: 'ร้อนจัด', night: 'ค่ำ' };
     return '<h2 class="sec-title">' + I('eye', 20) + 'Mood Journal</h2><div class="card">' + (keys.length
       ? '<ul class="mood-bars">' + keys.map((k) => '<li><span class="mlab">' + I(D.MOOD_BY_ID[k].icon, 16) + D.MOOD_BY_ID[k].short + '</span><span class="bar" aria-hidden="true"><i style="width:' + Math.round(mh[k] / tot * 100) + '%"></i></span><b>' + Math.round(mh[k] / tot * 100) + '%</b></li>').join('') + '</ul>'
@@ -143,7 +147,7 @@
   }
 
   function passportTeaser() {
-    const n = S.get().visits.length;
+    const n = S.live().length;
     return '<a class="card plus-card" href="#/wrapped"><span class="feat-ic">' + I('sparkles', 22) + '</span><div><b>Café Wrapped</b><small>' + (n ? 'สรุปเดือนนี้ของคุณพร้อมแล้ว' : 'Check-in ครั้งแรกเพื่อเริ่มสะสมสรุปของคุณ') + '</small></div>' + I('chevron-right', 18) + '</a>';
   }
 

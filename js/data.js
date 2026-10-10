@@ -415,21 +415,40 @@
         sp('ชั้นลอยไม้สัก', '17:00–18:30', 3, 4, 'แสงอำพันสุดท้ายของวัน')] }
   ];
 
-  const CAFES = RAW.map((c) => {
+  const prep = (c) => {
     DIMS.forEach((d) => { if (c.attr[d] == null) c.attr[d] = 3; });
     c.drinks.forEach((d, i) => { d.id = c.id + ':d' + i; d.cafeId = c.id; });
     c.spots.forEach((s, i) => { s.id = c.id + ':s' + i; s.cafeId = c.id; });
     return c;
-  });
+  };
+  const CAFES = RAW.map(prep);
 
   const CAFE_BY_ID = {};
   const DRINK_BY_ID = {};
   const SPOT_BY_ID = {};
-  CAFES.forEach((c) => {
+  const index = (c) => {
     CAFE_BY_ID[c.id] = c;
     c.drinks.forEach((d) => { DRINK_BY_ID[d.id] = d; });
     c.spots.forEach((s) => { SPOT_BY_ID[s.id] = s; });
-  });
+  };
+  CAFES.forEach(index);
+
+  // Add a café (same shape as an entry in RAW) or replace one added earlier. Used by the developer console.
+  function upsertCafe(raw) {
+    prep(raw);
+    const old = CAFE_BY_ID[raw.id];
+    if (!old) { CAFES.push(raw); index(raw); return raw; }
+    Object.assign(old, raw); old.base = null;   // base = null → CM.studio.apply() rebuilds its derived copies
+    index(old);
+    return old;
+  }
+
+  function removeCafe(id) {
+    const c = CAFE_BY_ID[id];
+    if (!c) return;
+    CAFES.splice(CAFES.indexOf(c), 1); delete CAFE_BY_ID[id];
+    c.drinks.forEach((d) => { delete DRINK_BY_ID[d.id]; }); c.spots.forEach((s) => { delete SPOT_BY_ID[s.id]; });
+  }
 
   // How well a drink type suits each mood (0–1). Missing = 0.5.
   const DRINK_MOOD = {
@@ -465,7 +484,8 @@
   CM.data = {
     OWNER_MOODS, OWNER_MOOD_MAP,
     DIMS, DEMO_CENTER, MOODS, MOOD_W, KEYWORDS, BOOST_ADJ, WEATHER_ADJ, QUIZ, ARCHETYPES,
-    LIKE_POS, LIKE_NEG, DIM_TH, REASON_HI, REASON_LOW, CAFES, CAFE_BY_ID, DRINK_BY_ID, SPOT_BY_ID,
+    LIKE_POS, LIKE_NEG, DIM_TH, REASON_HI, REASON_LOW, CAFES, CAFE_BY_ID, DRINK_BY_ID, SPOT_BY_ID, upsertCafe, removeCafe, PROMOS: { WELCOME7: 'plus7' },   // demo promo code: 7-day Plus trial
+   
     DRINK_MOOD, ACHIEVEMENTS, LEVELS,
     MOOD_BY_ID: MOODS.reduce((m, x) => { m[x.id] = x; return m; }, {}),
     ARCHETYPE_BY_ID: ARCHETYPES.reduce((m, x) => { m[x.id] = x; return m; }, {})
