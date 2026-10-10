@@ -10,4 +10,4 @@
       Open tools/dev-key.html in your browser, type your passcode, copy the two lines it prints into here,
       and leave passcode empty. The passcode itself never appears in the repository. */
 window.CM = window.CM || {};
-CM.devConfig = { passcode: '', salt: '', hash: '' };
+CM.devConfig = { passcode: '', salt: 'b96499e522cee8eea96383915b15836b', hash: '5693e2aeb8bbeb7f4f75c00e2d6f2c5dc7c02b33553bc6912999d41853973933' };
