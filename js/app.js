@@ -113,9 +113,9 @@
       '<li>' + I('sparkles', 20) + '<div><b>Mood วันนี้</b><span>รู้สึกยังไง อยากทำอะไร</span></div></li>' +
       '<li>' + I('cloud-rain', 20) + '<div><b>สภาพอากาศ</b><span>เราคิดให้เอง ไม่ต้องกด</span></div></li>' +
       '<li>' + I('user', 20) + '<div><b>นิสัยคาเฟ่ของคุณ</b><span>Quiz สั้น ๆ 10 ข้อ</span></div></li></ul>' +
-      '<button class="btn primary lg" data-act="start-quiz">เริ่มค้นหา Café Personality ของฉัน</button>' +
-      '<button class="btn text" data-act="skip-quiz">ข้ามไปก่อน เริ่มเลย</button>' +
-      '<p class="muted small center">' + (CM.auth.current() ? 'เข้าสู่ระบบอยู่' : 'มีบัญชีอยู่แล้ว? <a href="#/login">เข้าสู่ระบบ</a> · <a href="#/signup">สมัครสมาชิก</a>') + '</p>' +
+      (CM.auth.current()
+        ? '<button class="btn primary lg" data-act="start-quiz">เริ่มค้นหา Café Personality ของฉัน</button><button class="btn text" data-act="skip-quiz">ข้ามไปก่อน เริ่มเลย</button>'
+        : '<a class="btn primary lg" href="#/signup">สมัครสมาชิก</a><a class="btn ghost lg" href="#/login">เข้าสู่ระบบ</a><p class="muted small center">สมัครหรือเข้าสู่ระบบก่อน จึงจะเริ่มใช้งานได้</p>') +
       '</section>' };
   }
 
@@ -763,9 +763,9 @@
 
   /* ---------- customer sign-up / sign-in ---------- */
   function vAuth(mode) {
-    if (CM.auth.current()) { location.replace('#/profile'); return null; }
+    if (CM.auth.current()) { location.replace('#/home'); return null; }
     const up = mode === 'signup', f = (id, label, attrs, hint) => '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" ' + attrs + ' aria-describedby="authMsg">' + (hint ? '<small class="muted">' + hint + '</small>' : '') + '</div>';
-    return { nav: false, html: '<header class="hero-top ambient compact"><div class="topbar between"><div class="topbar">' + backBtn('#/profile') + '<span class="brand">' + I('user', 20) + (up ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ') + '</span></div></div></header>' +
+    return { nav: false, html: '<header class="hero-top ambient compact"><div class="topbar between"><div class="topbar">' + backBtn('#/welcome') + '<span class="brand">' + I('user', 20) + (up ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ') + '</span></div></div></header>' +
       '<section class="pad stagger"><div class="card"><h2 class="sec-title first">' + (up ? 'สร้างบัญชีลูกค้า' : 'ยินดีต้อนรับกลับ') + '</h2>' +
       (up ? '<p class="muted small">เก็บ Passport โค้ด และรสนิยมของคุณไว้ในบัญชี สลับบัญชีในเครื่องเดียวกันได้ — สิ่งที่มีอยู่ตอนนี้จะถูกย้ายเข้าบัญชีใหม่</p>' + f('authName', 'ชื่อที่ให้เราเรียก (ไม่บังคับ)', 'type="text" maxlength="24" autocomplete="given-name" value="' + esc(S.get().name || '') + '"') : '') +
       f('authEmail', 'อีเมล', 'type="email" inputmode="email" autocomplete="' + (up ? 'email' : 'username') + '" maxlength="60" placeholder="name@example.com"') +
@@ -887,12 +887,15 @@
   }
   function applyAmbient() { document.documentElement.dataset.ambient = W.ctx.ambient; }
 
+  // Open without a customer account: the landing + auth pages, and the owner / developer consoles (they have their own login)
+  const PUBLIC = ['welcome', 'login', 'signup', 'studio', 'dev'];
   // Pages that recommend cafés need at least one café (the developer may have removed the samples before adding real ones)
   const NEEDS_CAFES = ['home', 'discover', 'results', 'lens', 'hidden', 'drink', 'search', 'persona'];   // (the map still opens with no cafés)
   const vEmpty = () => ({ nav: true, html: '<header class="hero-top ambient"><div class="topbar between"><span class="brand">' + I('coffee', 20) + 'Café Mood</span></div><h1 class="display sm">ยังไม่มีคาเฟ่ในระบบ</h1><p class="lead sm">กำลังเตรียมร้านให้คุณ — กลับมาดูใหม่เร็ว ๆ นี้</p></header><section class="pad"><div class="card empty fav-empty">' + I('coffee', 26) + '<p><b>ยังไม่มีร้านให้แนะนำ</b></p><p class="muted small">เมื่อมีคาเฟ่เข้ามา คำแนะนำตาม Mood อากาศ และนิสัยคาเฟ่ของคุณจะขึ้นที่นี่</p></div></section>' });
   function render(keepScroll) {
     const r = parseRoute(), st = S.get();
-    if (!st.profile && !st.skipped && !['welcome', 'quiz', 'persona', 'login', 'signup'].includes(r.name)) { location.replace('#/welcome'); return; }
+    if (!CM.auth.current() && !PUBLIC.includes(r.name)) { location.replace('#/welcome'); return; }   // sign in / sign up first
+    if (!st.profile && !st.skipped && !['welcome', 'quiz', 'persona', 'login', 'signup', 'studio', 'dev'].includes(r.name)) { location.replace('#/welcome'); return; }
     if (map) { map.stop(); map.remove(); map = null; mapMarkers = []; }
     let v;
     if (!D.CAFES.length && NEEDS_CAFES.includes(r.name)) { v = vEmpty(); r.name = 'home'; r.empty = true; }
@@ -1159,7 +1162,7 @@
       const up = el.dataset.mode === 'signup', msg = $('#authMsg'), v = (id) => ($('#' + id) ? $('#' + id).value : ''), bad = (t) => { msg.textContent = t; msg.classList.add('bad'); };
       const res = up ? await CM.auth.signup({ email: v('authEmail'), password: v('authPw'), password2: v('authPw2'), name: v('authName') }) : await CM.auth.login(v('authEmail'), v('authPw'));
       if (res.err) return bad(res.err === 'wait' ? 'ใส่ผิดหลายครั้ง รออีก ' + res.wait + ' วินาทีแล้วลองใหม่' : CM.auth.message(res.err));
-      draftMoods = []; draftText = ''; ST.apply(W.ctx.hour); W.refresh(); toast(up ? 'สมัครสมาชิกแล้ว' : 'เข้าสู่ระบบแล้ว'); go('#/profile'); render();
+      draftMoods = []; draftText = ''; ST.apply(W.ctx.hour); W.refresh(); toast(up ? 'สมัครสมาชิกแล้ว' : 'เข้าสู่ระบบแล้ว'); go('#/home'); render();
     },
     'auth-logout': () => { CM.auth.logout(); draftMoods = []; draftText = ''; ST.apply(W.ctx.hour); W.refresh(); toast('ออกจากระบบแล้ว'); render(true); },
     'avatar-clear': () => { S.patch({ avatar: '' }); render(true); toast('ลบรูปโปรไฟล์แล้ว'); },
