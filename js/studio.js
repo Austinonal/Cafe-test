@@ -492,7 +492,7 @@
       '<div class="field"><label for="cdCode">โค้ด (A–Z ตัวเลข - ยาว 4–16)</label><input id="cdCode" type="text" maxlength="16" autocapitalize="characters" autocomplete="off" placeholder="เช่น HELLO-CAFE"></div>' +
       '<div class="field"><label for="cdGives">โค้ดนี้ได้อะไร</label><input id="cdGives" type="text" maxlength="60" placeholder="เช่น ลด ฿20 ทุกเมนู"></div>' +
       '<div class="field"><label for="cdUntil">ใช้ได้ถึงวันที่ (ไม่บังคับ)</label><input id="cdUntil" type="date" min="' + day() + '"></div>' +
-      '<button class="btn primary"' + (r.codes.length >= 10 ? ' disabled' : '') + ' data-act="cd-add">+ เพิ่มโค้ด</button></div>';
+      '<button class="btn primary"' + (r.codes.length >= 10 ? ' disabled aria-describedby="cdFull"' : '') + ' data-act="cd-add">+ เพิ่มโค้ด</button>' + (r.codes.length >= 10 ? '<p id="cdFull" class="muted small">ครบ 10 โค้ดแล้ว — ลบโค้ดเก่าก่อนจึงเพิ่มใหม่ได้</p>' : '') + '</div>';
   }
   let pp = null, ppId = null;   // draft of the stamp being designed
   const ppStamp = (c) => A.stamp(Object.assign({}, c, { pass: { label: pp.label, color: pp.color, shape: pp.shape, icon: pp.icon } }));
