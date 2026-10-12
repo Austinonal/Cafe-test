@@ -3,12 +3,19 @@
   window.CM = window.CM || {};
   const KEY = 'cafemood.v1', SHARED_KEY = 'cafemood.shared', SESSION = 'cafemood.session';
   // What belongs to the device (café owner side, developer overlay, purchases), not to the signed-in customer
-  const SHARED = ['studio', 'dev', 'ent', 'entPending', 'entUsed', 'authLocks'];
+  const SHARED = ['studio', 'dev', 'ent', 'entPending', 'entUsed', 'authLocks', 'crowd'];
 
   const defaults = () => ({
     studio: { cafeId: null, plan: 'free', period: 'year', trialEnd: 0, paid: false, trialUsed: false, byCafe: {} },   // Café Studio (owner side) demo state
     sub: { plan: 'free', period: 'year', startedAt: 0, trialEnd: 0, cancelled: false, endsAt: 0 },   // customer subscription (Plus)
     reminders: { events: false, rain: false },
+    notes: {},              // Café Notes (Plus): { cafeId: { r: 1-5, t: text, d: { drinkName: 'up'|'meh'|'down' }, at } }
+    trips: [],              // Trip Mode (Plus) saved trips: [{ id, prov, days: [[tripCafeId]], done: { id: true }, at }]
+    passTheme: 'espresso',  // Passport export theme (Plus)
+    crowd: [],              // anonymous check-in buckets {c, h, t} for Popular times (device-level in the prototype; a backend aggregate later)
+    tickets: [],            // event tickets bought with PromptPay: [{id, evId, ref, amt, status}]
+    lineLink: null,         // LINE connection {name, mode, at}
+    lineNotify: {},         // LINE notification topics (see thai.js)
     favCafes: [],           // café ids the user hearted (newest first)
     ent: [],                // products bought or received: [{pid, at, m|d|u}] (see js/ent.js)
     entPending: {},         // purchases waiting for the developer to confirm the transfer
@@ -58,6 +65,9 @@
     save,
     patch(p) { Object.assign(state, p); save(); },
     reset() { state = defaults(); save(); },
+    // Undo: put a JSON snapshot of the whole state back (in place, so every S.get() reference stays valid)
+    snapshot: () => JSON.stringify(state),
+    restore(json) { const o = JSON.parse(json); Object.keys(state).forEach((k) => { delete state[k]; }); Object.assign(state, defaults(), o); save(); },
     sessionId: () => sid,
     // Sign in / out: customer data lives under the account; adopt = start the new account from what this device holds now
     switchUser(id, adopt) {

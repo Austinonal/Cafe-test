@@ -79,7 +79,7 @@
   function analyzeText(raw) {
     const t = (raw || '').toLowerCase();
     const moods = [], labels = [], boosts = {};
-    let hidden = false, drink = null, night = false;
+    let hidden = false, drink = null, night = false, local = false, indoor = false, air = false, first = false;
     D.KEYWORDS.forEach((r) => {
       if (!r.k.some((k) => t.includes(k))) return;
       labels.push(r.label);
@@ -88,8 +88,12 @@
       if (r.hidden) hidden = true;
       if (r.drink) drink = r.drink;
       if (r.night) night = true;
+      if (r.local) local = true;
+      if (r.indoor) indoor = true;
+      if (r.air) air = true;
+      if (r.first) first = true;
     });
-    return { moods, boosts, hidden, drink, night, labels: uniq(labels) };
+    return { moods, boosts, hidden, drink, night, local, indoor, air, first, labels: uniq(labels) };
   }
 
   function moodHeadline(mood, ctx) {
@@ -115,9 +119,18 @@
       cloudy: clamp((.5 * a.cozy + .5 * a.bright) / 10 + .1),
       night: (.5 * a.dark + .3 * a.cozy + .2 * (cafe.hours[1] >= 22 ? 10 : 3)) / 10
     };
-    if (ctx.night) return ctx.kind === 'rain' ? .6 * fit.rain + .4 * fit.night : fit.night;
-    return fit[ctx.kind];
+    let f = ctx.night ? (ctx.kind === 'rain' ? .6 * fit.rain + .4 * fit.night : fit.night) : fit[ctx.kind];
+    if (ctx.pm >= PM_HIGH) f = .45 * f + .55 * airFit(cafe);   // haze: indoor + air-cleaner cafés matter most
+    return f;
   }
+
+  /* ---------- Air quality (PM2.5, µg/m³). Thai PCD 2023 bands: ≤15 / ≤25 / ≤37.5 / ≤75 / >75 ---------- */
+  const PM_HIGH = 37.5;   // Thailand's 24-h PM2.5 standard (since 1 Jun 2023). Open-Meteo gives the current hour, so treat it as an indicator.
+  const PM_BANDS = [[15, 'ดีมาก', '#3E9AA6'], [25, 'ดี', '#3C5E2F'], [37.5, 'ปานกลาง', '#B7791F'], [75, 'เริ่มมีผลต่อสุขภาพ', '#C65B3A'], [1e9, 'มีผลต่อสุขภาพ', '#B3261E']];
+  const pmBand = (pm) => PM_BANDS.find((b) => pm <= b[0]);
+  // has an air cleaner: owner's Facilities toggle (Studio) when there is one, else the café record
+  const hasAir = (c) => (CM.studio && CM.studio.facilityOn ? CM.studio.facilityOn(c, 'air') : !!c.air);
+  const airFit = (c) => (.55 * (10 - c.attr.outdoor) + .45 * (hasAir(c) ? 10 : 0)) / 10;
 
   function isOpen(cafe, hour) {
     if (cafe.force) return cafe.force === 'open';   // owner override from Café Studio ('open' | 'closed')
@@ -163,6 +176,37 @@
     return clamp((s - min) / ((max - min) || 1));
   }
 
+  /* ---------- "อื่นๆ": what the customer typed vs what an owner wrote ----------
+     Thai has no spaces, so: (1) words that mean the same thing are folded into one concept (เงียบ ≈ สงบ, ดนตรี ≈ แจ๊ส …),
+     (2) leftover text is compared as character pairs. A match is a *hit* at ≥ .5. Small, explainable, no model needed. */
+  const SYN = [['ดนตรี', 'เพลง', 'แจ๊ส', 'แจ๊ซ', 'jazz', 'live', 'อะคูสติก', 'acoustic', 'เล่นสด', 'คอนเสิร์ต'], ['หนังสือ', 'อ่าน', 'book', 'read'], ['เงียบ', 'สงบ', 'quiet', 'calm', 'ไม่วุ่นวาย'],
+    ['ต้นไม้', 'สวน', 'garden', 'plant', 'เขียว', 'ธรรมชาติ'], ['ทะเล', 'ริมน้ำ', 'แม่น้ำ', 'คลอง', 'sea', 'river', 'beach'], ['สัตว์เลี้ยง', 'หมา', 'แมว', 'สุนัข', 'pet', 'dog', 'cat'],
+    ['ทำงาน', 'ปลั๊ก', 'วายฟาย', 'wifi', 'laptop', 'โน้ตบุ๊ก', 'โน๊ตบุ๊ค'], ['เด็ก', 'ครอบครัว', 'kid', 'family'], ['ถ่ายรูป', 'ถ่ายภาพ', 'photo', 'ฟิล์ม'],
+    ['เวิร์กช็อป', 'เวิร์คช็อป', 'workshop', 'ปั้น', 'เซรามิก', 'วาดรูป', 'คราฟต์', 'craft'], ['มัทฉะ', 'matcha', 'ชาเขียว'], ['ของหวาน', 'เค้ก', 'ขนม', 'dessert', 'bakery', 'เบเกอรี่'],
+    ['ฟรี', 'แจก', 'free'], ['ปาร์ตี้', 'party', 'วันเกิด', 'เลี้ยง', 'กลุ่มใหญ่'], ['เดต', 'แฟน', 'date', 'โรแมนติก', 'romantic']];
+  const STOP = ['บรรยากาศ', 'อยาก', 'ได้', 'ร้าน', 'ที่', 'มี', 'ให้', 'ไป', 'หา', 'วันนี้', 'หน่อย', 'แบบ', 'ครับ', 'ค่ะ', 'คะ', 'นะ', 'และ', 'กับ', 'หรือ', 'ของ', 'เป็น', 'ใน', 'ชั้น', 'มุม'];
+  const PAIRS = SYN.map((g, i) => g.map((w) => [w, String.fromCharCode(0xE000 + i)])).reduce((a, b) => a.concat(b), []).sort((a, b) => b[0].length - a[0].length);
+  function fold(raw) {
+    let t = String(raw || '').toLowerCase().replace(/[ๆ\s]+/g, '').replace(/[^\p{L}\p{M}\p{N}]/gu, '')   // keep Thai vowel/tone marks (they are \p{M});
+    STOP.forEach((w) => { t = t.split(w).join(''); });
+    const c = new Set(); PAIRS.forEach((p) => { if (t.includes(p[0])) { c.add(p[1]); t = t.split(p[0]).join(p[1]); } });
+    return { c, rest: t.replace(/[\uE000-\uF8FF]/g, '') };
+  }
+  const bigrams = (s) => { const o = new Set(); for (let i = 0; i < s.length - 1; i++) o.add(s.slice(i, i + 2)); return o; };
+  function textMatch(a, b) {
+    const x = fold(a), y = fold(b); let s = 0;
+    if (x.c.size && y.c.size) { let k = 0; x.c.forEach((v) => { if (y.c.has(v)) k++; }); if (k) s = .55 + .45 * k / Math.min(x.c.size, y.c.size); }
+    const p = bigrams(x.rest), q = bigrams(y.rest);
+    if (Math.min(p.size, q.size) >= 3) { let k = 0; p.forEach((v) => { if (q.has(v)) k++; }); s = Math.max(s, .9 * k / Math.min(p.size, q.size)); }
+    return Math.min(1, s);
+  }
+  // best owner note (today's mood, Café Moments, events) for what the customer typed; null when nothing is close enough
+  function otherHit(text, cafe) {
+    const notes = text && CM.studio && CM.studio.otherNotes ? CM.studio.otherNotes(cafe) : [];
+    let best = null; notes.forEach((n) => { const sim = textMatch(text, n); if (sim >= .5 && (!best || sim > best.sim)) best = { sim, note: n }; });
+    return best;
+  }
+
   function moodScore(cafe, mood) {
     if (!mood) return null;
     let s = mood.moods.length ? avg(mood.moods.map((id) => weightsScore(cafe.attr, D.MOOD_W[id]))) : null;
@@ -201,6 +245,10 @@
         cloudy: 'วันครึ้ม ๆ แบบนี้นั่งสบายมาก'
       }[k]);
     }
+    if (ctx.pm >= PM_HIGH && hasAir(cafe) && out.length < 3) out.push('มีเครื่องฟอกอากาศ — วันนี้ฝุ่น PM2.5 สูง');
+    else if (mood && mood.local && cafe.local && out.length < 3) out.push('ร้านท้องถิ่น ตรงกับที่คุณมองหา');
+    const oh = mood && otherHit(mood.text, cafe);
+    if (oh) out.unshift('ตรงกับที่ร้านบอก: “' + oh.note + '”');   // escaped where reasons are rendered
     const lv = cafe.live;
     if (lv && mood && out.length < 3) {
       if (lv.status === 'quiet' && mood.moods.some((m) => ['relax', 'focus', 'alone'].includes(m))) out.push('ตอนนี้ร้านเงียบ ที่นั่งว่าง ' + lv.seats + ' ที่');
@@ -237,6 +285,13 @@
       if (lv.status && ms.some((m) => ['relax', 'focus', 'alone'].includes(m))) b += lv.status === 'quiet' ? .02 : lv.status === 'busy' ? -.03 : 0;
       f += Math.min(b, .05);   // capped: owners signal what's true today, they can't buy rank
     }
+    if (mood) {   // v23: asked-for context only, small and capped like the owner nudges
+      if (mood.local && cafe.local) f += .06;
+      if (mood.indoor) f += .04 * (10 - cafe.attr.outdoor) / 10;
+      if (mood.air && hasAir(cafe)) f += .04;
+    }
+    const oh = mood && otherHit(mood.text, cafe);
+    if (oh) f += .08 * oh.sim;   // the customer's own words matched the owner's own words — not purchasable, capped
     if (!info.open) f *= .78;
 
     const match = clamp(Math.round(40 + 58 * f), 0, 99, 0);
@@ -358,6 +413,6 @@
 
   CM.engine = {
     clamp, hash, distKm, buildProfile, likes, analyzeText, moodHeadline, weatherFit, openInfo, fmtHour,
-    hiddenInfo, scoreCafe, rank, drinkRank, stats, achievementProgress, levelInfo, makeVisit, persScore
+    hiddenInfo, textMatch, otherHit, scoreCafe, rank, drinkRank, stats, PM_HIGH, pmBand, hasAir, airFit, achievementProgress, levelInfo, makeVisit, persScore
   };
 })();

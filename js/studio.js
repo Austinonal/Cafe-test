@@ -15,7 +15,7 @@
   let api = null;   // injected by app.js (sheet helpers, render, handlers)
 
   const OFFICIAL = new Set(['third-floor-roasters', 'kuri-matcha-lab', 'tiger-bean', 'cloud-nine']);
-  const FACILITIES = [['wifi', 'Wi-Fi'], ['plug', 'ปลั๊กไฟ'], ['pet', 'Pet friendly'], ['parking', 'ที่จอดรถ'], ['outdoor', 'โซนกลางแจ้ง'], ['access', 'Accessibility (ทางลาด/ห้องน้ำ)']];
+  const FACILITIES = [['wifi', 'Wi-Fi'], ['plug', 'ปลั๊กไฟ'], ['pet', 'Pet friendly'], ['parking', 'ที่จอดรถยนต์'], ['moto', 'ที่จอดมอเตอร์ไซค์'], ['air', 'เครื่องฟอกอากาศ / ห้องแอร์'], ['outdoor', 'โซนกลางแจ้ง'], ['access', 'Accessibility (ทางลาด/ห้องน้ำ)']];
   const DNA_KEYS = ['nature', 'photo', 'coffee', 'quiet', 'work', 'cozy'];
   const STATUS = { quiet: 'Quiet', moderate: 'Moderate', busy: 'Busy' };
   const STATUS_TH = { quiet: 'เงียบ', moderate: 'ปานกลาง', busy: 'คนเยอะ' };
@@ -30,7 +30,7 @@
   ];
 
   /* ---------- state ---------- */
-  const blank = () => ({ mood: null, moodDay: '', status: null, seats: null, statusTs: 0, pick: null, pickDay: '', claims: {}, info: null, hours: null,
+  const blank = () => ({ mood: null, moodNote: '', moodDay: '', status: null, seats: null, statusTs: 0, pick: null, pickDay: '', claims: {}, info: null, transit: null, hours: null,
     priceOver: {}, off: {}, extraDrinks: [], spotOver: {}, extraSpots: [], quest: null, reward: null, moments: [], events: [], verified: false,
     stats: { views: 0, navs: 0, checkins: 0 }, updates: 0,
     shop: { name: '', tagline: '', banner: '', open: 'auto' }, owner: null, owned: 0, passport: null, codes: [], proof: '', drinkPhoto: {}, drinkTheme: {}, ledger: {} });
@@ -55,9 +55,10 @@
   /* ---------- facilities with 3-source confidence ---------- */
   function defaultInfo(c) {
     return { wifi: hash(c.id + 'wifi') > .15, plug: c.attr.work >= 5 || hash(c.id + 'plug') > .6, pet: hash(c.id + 'pet') > .7,
-      parking: hash(c.id + 'park') > .5, outdoor: c.base ? c.base.outdoor >= 5 : c.attr.outdoor >= 5, access: hash(c.id + 'acc') > .4 };
+      parking: hash(c.id + 'park') > .5, moto: hash(c.id + 'moto') > .3, air: c.air != null ? !!c.air : (c.attr.outdoor <= 4 && hash(c.id + 'air') > .4), outdoor: c.base ? c.base.outdoor >= 5 : c.attr.outdoor >= 5, access: hash(c.id + 'acc') > .4 };
   }
-  const infoOf = (c) => { const r = peek(c.id); return (r && r.info) || defaultInfo(c); };
+  const infoOf = (c) => { const r = peek(c.id); return Object.assign(defaultInfo(c), (r && r.info) || {}); };   // records saved before v23 have no moto / air: fall back per key
+  const facilityOn = (c, k) => !!infoOf(c)[k];
   function facility(c, key) {
     const owner = !!infoOf(c)[key];
     const community = Math.round(hash(c.id + key + 'c') * 14);
@@ -69,8 +70,8 @@
   /* ---------- live data + effective café data ---------- */
   function liveFor(c, hour) {
     const r = peek(c.id), t = day(), out = {};
-    if (r && r.mood && r.moodDay === t) out.mood = r.mood;
-    else if (seededFor(c) && hash(c.id + t + 'm') > .45) out.mood = D.OWNER_MOODS[Math.floor(hash(c.id + t + 'mm') * D.OWNER_MOODS.length)][0];
+    if (r && r.mood && r.moodDay === t) { out.mood = r.mood; if (r.mood === 'other' && r.moodNote) out.moodNote = r.moodNote; }
+    else if (seededFor(c) && hash(c.id + t + 'm') > .45) out.mood = D.OWNER_MOODS[Math.floor(hash(c.id + t + 'mm') * (D.OWNER_MOODS.length - 1))][0];   // demo cafés never pick “other” (it needs the owner's own words)
     if (!E.openInfo(c, hour).open) return out;
     if (r && r.status && Date.now() - r.statusTs < 3 * 3600e3) { out.status = r.status; out.seats = r.seats; }
     else if (seededFor(c)) {
@@ -151,6 +152,7 @@
     const ms = ses.mood ? ses.mood.moods : [];
     const top = all.map((m) => {
       let s = m.tags.filter((t) => ms.includes(t)).length * 2;
+      if (m.tags.includes('other') && m.otherNote && typed(ses) && E.textMatch(typed(ses), m.otherNote) >= .5) s += 3;   // “อื่นๆ”: the customer's words ≈ the owner's words
       if (m.weather && m.weather === ses.ctx.kind) s += 2;
       if (ses.profile) s += E.persScore(D.CAFE_BY_ID[m.cafeId], ses.profile);
       return { m, s: s + hash(m.id) * .1 };
@@ -161,11 +163,21 @@
       .filter((m) => m.tags.some((t) => ms.includes(t)) || (m.weather && m.weather === ses.ctx.kind))[0];
     return spon && !top.some((m) => m.cafeId === spon.cafeId) ? top.concat([spon]) : top;
   }
+  // Everything an owner wrote under “อื่นๆ” that is live right now (today's Owner Mood, Café Moments, running events) — used to match what customers type
+  function otherNotes(c) {
+    const r = peek(c.id), t = day(), out = [];
+    if (!r) return out;
+    if (r.mood === 'other' && r.moodDay === t && r.moodNote) out.push(r.moodNote);
+    (r.moments || []).forEach((m) => { if (m.tags.includes('other') && m.otherNote) out.push(m.otherNote); });
+    (r.events || []).forEach((e) => { if (e.tags.includes('other') && e.otherNote && eventStatus(e) !== 'ended') out.push(e.otherNote); });
+    return out;
+  }
+  const typed = (ses) => (ses.mood && ses.mood.text) || '';
   const trackKey = (id, k) => { rec(id).stats[k]++; S.save(); };
 
   /* ---------- Events ---------- */
-  const EVENT_TYPES = [['live', 'Live music', 'ดนตรีสด'], ['workshop', 'Workshop', 'เวิร์กช็อป'], ['tasting', 'Tasting', 'ชิม/เทสติ้ง'], ['popup', 'Pop-up', 'Pop-up'], ['seasonal', 'Seasonal', 'ตามฤดูกาล'], ['other', 'Other', 'อื่น ๆ']];
-  const typeLabel = (k) => { const t = EVENT_TYPES.find((x) => x[0] === k) || EVENT_TYPES[5]; return t[1]; };
+  const EVENT_TYPES = [['live', 'Live music', 'ดนตรีสด'], ['workshop', 'Workshop', 'เวิร์กช็อป'], ['tasting', 'Tasting', 'ชิม/เทสติ้ง'], ['popup', 'Pop-up', 'Pop-up'], ['market', 'Café Market', 'ตลาดนัดคาเฟ่'], ['seasonal', 'Seasonal', 'ตามฤดูกาล'], ['other', 'Other', 'อื่น ๆ']];
+  const typeLabel = (k) => { const t = EVENT_TYPES.find((x) => x[0] === k) || EVENT_TYPES[EVENT_TYPES.length - 1]; return t[1]; };
   const localDay = (off) => { const d = new Date(); d.setDate(d.getDate() + (off || 0)); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
   const toMin = (t) => { const p = (t || '00:00').split(':'); return +p[0] * 60 + +p[1]; };
 
@@ -178,10 +190,12 @@
     return 'upcoming';   // today's session is over but the event continues on later days
   }
 
+  const SEED_TICKETS = { se1: { price: 150, seats: 40, pp: '0000000000000', demo: true }, se5: { price: 250, seats: 30, pp: '0000000000000', demo: true }, se6: { price: 450, seats: 60, pp: '0000000000000', demo: true } };   // demo only: an invalid ID, so a bank app rejects the QR instead of paying a stranger
   const SEED_CODES = { se1: { code: 'ACOUSTIC', codeGives: 'ลด ฿20 เมนูในงาน' }, se2: { code: 'MATCHA2', codeGives: 'ฟรีขนมญี่ปุ่น 1 ชิ้น เมื่อสั่ง Tasting Flight' } };   // demo event codes
   // Demo events so the customer side has content before any real owner posts. Dates are relative to today.
   function seededEvents() {
     const mk = (id, cafeId, title, type, s, e, st, et, tags, desc, items, sets, gives) => ({ id, cafeId, title, type, startDate: localDay(s), endDate: localDay(e), startTime: st, endTime: et, tags, desc, items, sets, gives, seeded: true });
+    const T = CM.thai, fo = (id) => T.festOffset(id), wk = (dow) => T.nextDow(dow);
     return [
       mk('se1', 'dusk-society', 'Acoustic Night', 'live', 0, 0, '18:00', '20:00', ['social', 'cozy'], 'ดนตรีอะคูสติกสดบนชั้นลอย นั่งฟังเพลินกับเครื่องดื่มประจำคืนนี้',
         [{ name: 'Smoked Maple Latte (ราคาอีเว้นท์)', price: 129 }, { name: 'Espresso Martini 0%', price: 149 }], [{ name: 'Date Night Set', price: 299, includes: 'เครื่องดื่ม 2 แก้ว + ของหวาน 1 ชิ้น' }],
@@ -192,9 +206,19 @@
       mk('se3', 'plant-parlour', 'Garden Workshop: Terrarium', 'workshop', 5, 5, '14:00', '16:00', ['creative', 'photo', 'social'], 'ทำเทอเรียมของตัวเองในเรือนกระจก มีวิทยากรแนะนำตลอดเวลา',
         [{ name: 'Fig Fizz', price: 120 }], [{ name: 'Workshop Set', price: 650, includes: 'อุปกรณ์ทำเทอเรียม + เครื่องดื่ม 1 แก้ว' }],
         [{ name: 'ต้นไม้จิ๋ว', rule: 'ผู้เข้าร่วมทุกคน', qty: 20 }]),
+      mk('se5', 'baan-rim-khlong', 'ลอยกระทงริมคลอง · Krathong Workshop', 'seasonal', fo('loy'), fo('loy'), '17:00', '21:00', ['social', 'photo', 'cozy'], 'ทำกระทงใบตองจากวัสดุธรรมชาติ นั่งริมคลองจิบชาร้อน แล้วลอยกระทงที่ท่าน้ำของร้าน',
+        [{ name: 'ชาตะไคร้ใบเตย', price: 79 }], [{ name: 'Krathong Set', price: 250, includes: 'ชุดทำกระทง + เครื่องดื่ม 1 แก้ว + ขนมไทย' }], [{ name: 'กระทงใบตอง', rule: 'ผู้ร่วมเวิร์กช็อปทุกคน', qty: 30 }]),
+      mk('se6', 'neon-alley', 'Countdown Night · ส่งท้ายปีเก่า', 'popup', fo('ny'), fo('ny'), '20:00', '23:30', ['social', 'cozy'], 'ปาร์ตี้ส่งท้ายปีในซอยเยาวราช ดนตรีสด เมนูคอกเทลไม่มีแอลกอฮอล์ ถ่ายรูปกับป้ายไฟ',
+        [{ name: 'Neon Soda', price: 99 }], [{ name: 'Countdown Set', price: 450, includes: 'เครื่องดื่ม 2 แก้ว + ของว่าง + ที่นั่งชั้นลอย' }], []),
+      mk('se7', 'greenhouse-99', 'Songkran Cool-Down · หลบร้อนในเรือนกระจก', 'seasonal', fo('songkran'), fo('songkran') + 2, '10:00', '18:00', ['relax', 'cozy', 'photo'], 'หนีสงกรานต์มานั่งเย็น ๆ ในโซนแอร์ มีเมนูน้ำแข็งไสและกิจกรรมรดน้ำดำหัวแบบสุภาพ ไม่ปะทะน้ำ',
+        [{ name: 'Mango Shaved Ice', price: 99 }], [], []),
+      mk('se8', 'khum-wiang-cafe', 'ตลาดนัดคาเฟ่เช้าวันเสาร์ · เวียงเก่า', 'market', wk(6), wk(6), '07:30', '12:00', ['social', 'photo', 'coffee'], 'ตลาดนัดคาเฟ่ในลานหน้าร้าน รวมเจ้าของร้านกาแฟดอย ขนมพื้นเมือง และของทำมือจากชุมชน',
+        [{ name: 'ชุดชิมกาแฟดอย 3 แก้ว', price: 120 }], [], []),
+      mk('se9', 'thalang-road-roasters', 'ตลาดนัดถนนถลาง · Sunday Café Market', 'market', wk(0), wk(0), '16:00', '22:00', ['social', 'photo'], 'ตลาดนัดคืนวันอาทิตย์หน้าร้าน มีแผงกาแฟพื้นเมือง ขนมโบราณ และดนตรีริมถนน',
+        [{ name: 'Old Town Iced Latte', price: 90 }], [], []),
       mk('se4', 'moss-and-mist', 'Rainy Season Special', 'seasonal', 0, 7, '09:00', '18:00', ['cozy', 'relax'], 'ตลอดหน้าฝน เมนูชาร้อนราคาพิเศษสำหรับคนที่มาฟังเสียงฝนบนหลังคากระจก',
         [{ name: 'Jasmine Rain Tea', price: 99 }, { name: 'Pandan Latte', price: 109 }], [], [])
-    ].map((e) => Object.assign(e, SEED_CODES[e.id])).filter((e) => e.cafeId !== root().cafeId && D.CAFE_BY_ID[e.cafeId]);   // demo events vanish with their sample café
+    ].map((e) => Object.assign(e, SEED_CODES[e.id], SEED_TICKETS[e.id] ? { ticket: SEED_TICKETS[e.id] } : {})).filter((e) => e.cafeId !== root().cafeId && D.CAFE_BY_ID[e.cafeId]);   // demo events vanish with their sample café
   }
   function eventsAll() {
     const own = D.CAFES.reduce((a, c) => { const r = peek(c.id); return r && r.events ? a.concat(r.events.map((e) => Object.assign({ cafeId: c.id }, e))) : a; }, []);
@@ -219,6 +243,7 @@
     return eventsAll().filter((e) => eventStatus(e) !== 'ended').map((e) => {
       const st = eventStatus(e);
       let s = (st === 'live' ? 3 : st === 'today' ? 2 : 0) + e.tags.filter((t) => ms.includes(t)).length * 2;
+      if (e.tags.includes('other') && e.otherNote && typed(ses) && E.textMatch(typed(ses), e.otherNote) >= .5) s += 4;
       if (ses.profile) s += E.persScore(D.CAFE_BY_ID[e.cafeId], ses.profile);
       return { e, s: s + hash(e.id) * .1 };
     }).sort((a, b) => b.s - a.s).slice(0, limit).map((o) => o.e);
@@ -280,10 +305,10 @@
   }
   function liveBanner(c) {
     const l = c.live || {};
-    if (!l.status && !l.mood) return '';
-    const mood = l.mood ? D.OWNER_MOODS.find((m) => m[0] === l.mood) : null;
+    const mood = l.mood && l.mood !== 'other' ? D.OWNER_MOODS.find((m) => m[0] === l.mood) : null, other = l.mood === 'other' && l.moodNote;
+    if (!l.status && !mood && !other) return '';
     return '<div class="card live-card">' + (l.status ? liveChip(c) + (l.status === 'quiet' ? '<p class="good">' + I('check', 16) + 'Good time to visit</p>' : l.status === 'busy' ? '<p class="muted small">ตอนนี้คนเยอะ ลองมาอีกครั้งช่วงบ่ายแก่ ๆ</p>' : '') : '') +
-      (mood ? '<p class="small">ร้านบอกว่าวันนี้บรรยากาศ <b>' + mood[1] + '</b></p>' : '') +
+      (mood ? '<p class="small">ร้านบอกว่าวันนี้บรรยากาศ <b>' + mood[1] + '</b></p>' : other ? '<p class="small">ร้านบอกว่าวันนี้ <b>อื่นๆ</b> — ' + esc(l.moodNote) + '</p>' : '') +
       '<p class="muted small">' + I('badge-check', 13) + 'อัปเดตโดยร้าน' + (isVerified(c) ? ' (Verified)' : '') + '</p></div>';
   }
   function pickCard(c) {
@@ -400,7 +425,7 @@
     const status = r.status && Date.now() - r.statusTs < 3 * 3600e3 ? r.status : null;
     const seats = status ? r.seats : null;
     const sb = ['quiet', 'moderate', 'busy'].map((k) => '<button class="stbtn st-' + k + (status === k ? ' on' : '') + '" data-act="st-status" data-k="' + k + '" aria-pressed="' + (status === k) + '"><i aria-hidden="true"></i>' + STATUS[k] + '<small>' + STATUS_TH[k] + '</small></button>').join('');
-    const moodOn = r.moodDay === t && r.mood ? D.OWNER_MOODS.find((m) => m[0] === r.mood) : null;
+    const moodOn = r.moodDay === t && r.mood ? D.OWNER_MOODS.find((m) => m[0] === r.mood) : null, otherOn = !!moodOn && r.mood === 'other';
     const moods = D.OWNER_MOODS.map((m) => '<button class="fchip' + (r.mood === m[0] && r.moodDay === t ? ' on' : '') + '" data-act="st-mood" data-k="' + m[0] + '" aria-pressed="' + (r.mood === m[0] && r.moodDay === t) + '">' + m[1] + '</button>').join('');
     const pk = r.pickDay === t ? r.pick : null, pkD = pk && D.DRINK_BY_ID[pk.drinkId];
     const drinks = c.drinks.map((d) => '<label class="radio-card"><input type="radio" name="pickDrink" value="' + d.id + '"' + (pk && pk.drinkId === d.id ? ' checked' : '') + '><span><b>' + esc(d.name) + '</b><small>฿' + d.price + ' · ' + TYPE_TH[d.type] + '</small></span></label>').join('');
@@ -410,7 +435,7 @@
       '<div class="qa"><button class="btn primary" data-act="st-cust" data-d="1">' + I('plus', 18) + 'ลูกค้า 1 คน</button><button class="btn ghost" data-act="st-inc-sheet">' + I('wallet', 18) + 'บันทึกรายรับ</button></div>' +
       '<div class="card"><div class="st-row"><h2 class="st-h">' + I('users', 18) + 'สถานะร้านตอนนี้</h2>' + (l.status ? liveChip(c) : '<small class="muted">ยังไม่ได้ตั้ง</small>') + '</div><div class="stbtns" role="group" aria-label="สถานะร้าน">' + sb + '</div>' +
       '<div class="stepper"><span>ที่นั่งว่าง</span><button class="iconbtn" data-act="st-seats" data-d="-1" aria-label="ลดที่นั่งว่าง">−</button><b aria-live="polite">' + (seats == null ? '–' : seats) + '</b><button class="iconbtn" data-act="st-seats" data-d="1" aria-label="เพิ่มที่นั่งว่าง">+</button></div></div>' +
-      fold('mood', 'sparkles', 'Owner Mood', moodOn ? moodOn[1] : 'ยังไม่ได้เลือก', '<p class="muted small">ถ้าตรงกับ Mood และอากาศของลูกค้า ระบบจะดันร้านให้เล็กน้อย (ไม่ใช่การซื้ออันดับ)</p><div class="fchips" role="group" aria-label="Owner mood">' + moods + '</div>') +
+      fold('mood', 'sparkles', 'Owner Mood', moodOn ? moodOn[1] + (otherOn && r.moodNote ? ' · ' + esc(r.moodNote) : '') : 'ยังไม่ได้เลือก', '<p class="muted small">ถ้าตรงกับ Mood และอากาศของลูกค้า ระบบจะดันร้านให้เล็กน้อย (ไม่ใช่การซื้ออันดับ)</p><div class="fchips" role="group" aria-label="Owner mood">' + moods + '</div>' + (otherOn ? '<div class="field two"><label for="ownerMoodNote">บอกลูกค้าว่า “อื่นๆ” คืออะไร <small class="muted">(ไม่บังคับ)</small></label><input id="ownerMoodNote" type="text" maxlength="80" value="' + esc(r.moodNote || '') + '" placeholder="เช่น ดนตรีสดเบา ๆ ตอนเย็น"><small class="muted">ติ๊ก “อื่นๆ” โดยไม่พิมพ์ก็ได้ — ถ้าไม่พิมพ์ ลูกค้าจะไม่เห็นบรรทัดนี้ในหน้าร้าน</small></div>' : '')) +
       fold('pick', 'cup', 'Owner’s Pick', pkD ? esc(pkD.name) : 'ยังไม่ได้ตั้ง', '<div class="radios">' + drinks + '</div>' +
         '<div class="field two"><label for="pickPrice">ราคาวันนี้ (฿)</label><input id="pickPrice" type="number" min="0" max="999" inputmode="numeric" value="' + (pk ? pk.price : '') + '" placeholder="เช่น 145"></div>' +
         '<div class="field two"><label for="pickNote">ข้อความจากร้าน</label><input id="pickNote" type="text" maxlength="60" value="' + esc(pk ? pk.note : '') + '" placeholder="เมนูที่เจ้าของร้านอยากให้ลองวันนี้"></div>' +
@@ -425,6 +450,13 @@
       (has ? '<button class="btn ghost sm" data-act="st-dph-clear" data-id="' + d.id + '">ลบรูป</button>' : '') +
       '<select class="dth" data-dth="' + d.id + '" aria-label="ธีมสีเมนู ' + esc(d.name) + '">' + DRINK_THEMES.map((t, i) => '<option value="' + i + '"' + (((r.drinkTheme || {})[d.id] || 0) === i ? ' selected' : '') + '>' + t[0] + '</option>').join('') + '</select></div>';
   };
+  function transitForm(c, r) {
+    const t = r.transit || CM.thai.transitOf(c) || {}, o = (v, cur) => '<option' + (v === cur ? ' selected' : '') + '>' + v + '</option>';
+    return '<div class="field"><label for="trSys">ระบบ</label><select id="trSys">' + ['BTS', 'MRT', 'ARL'].map((v) => o(v, t.sys)).join('') + '</select></div>' +
+      '<div class="field"><label for="trSt">ชื่อสถานี</label><input id="trSt" type="text" maxlength="30" value="' + esc(t.station || '') + '"></div>' +
+      '<div class="hours"><div class="field"><label for="trEx">ทางออก</label><input id="trEx" type="text" maxlength="6" value="' + esc(t.exit || '') + '" placeholder="เช่น 3"></div><div class="field"><label for="trWk">เดิน (นาที)</label><input id="trWk" type="number" min="1" max="60" value="' + (t.walk || '') + '"></div></div>' +
+      '<p class="muted small">ลูกค้าเห็น “BTS … · ทางออก … · เดิน … นาที” ที่หน้าร้าน ถ้าไม่ใกล้รถไฟฟ้าให้ลบชื่อสถานีแล้วบันทึก</p><button class="btn ghost sm" data-act="st-transit-save">บันทึก</button>';
+  }
   function tCafe(c) {
     const r = rec(c.id), info = infoOf(c), lv = level(c);
     const nFac = FACILITIES.filter((f) => info[f[0]]).length;
@@ -445,7 +477,8 @@
       '<div class="card"><h2 class="st-h">' + I('badge-check', 18) + 'Verified</h2>' + ver + '</div>' +
       fold('menu', 'cup', 'เมนู & ราคา', c.drinks.length + ' รายการ', menu + '<button class="btn ghost block" data-act="st-drink-add">+ เพิ่มเมนู</button>') +
       fold('hours', 'clock', 'เวลาเปิด–ปิด', fmtH(c.hours[0]) + '–' + fmtH(c.hours[1]), '<div class="hours"><div class="field"><label for="hOpen">เปิด (ชม.)</label><input id="hOpen" type="number" min="0" max="23.5" step="0.5" value="' + c.hours[0] + '"></div><div class="field"><label for="hClose">ปิด (ชม.)</label><input id="hClose" type="number" min="1" max="28" step="0.5" value="' + c.hours[1] + '"></div></div><p class="muted small">ปิดหลังเที่ยงคืน ใส่ 25 = 01:00</p><button class="btn ghost sm" data-act="st-hours-save">บันทึกเวลา</button>') +
-      fold('fac', 'info', 'Facilities', nFac + '/' + FACILITIES.length, fac) +
+      fold('fac', 'info', 'Facilities (ที่จอด · เครื่องฟอกอากาศ)', nFac + '/' + FACILITIES.length, fac) +
+      fold('transit', 'train', 'รถไฟฟ้า · ทางออก · เวลาเดิน', (r.transit && r.transit.station) ? r.transit.station : 'ระบบประมาณให้', transitForm(c, r)) +
       fold('spots', 'camera', 'Photo Spots', c.spots.length + ' จุด', spots + '<button class="btn ghost block" data-act="st-spot-add">+ เพิ่มจุดถ่ายรูป</button>') +
       fold('dna', 'sparkles', 'Café DNA', isPro() ? '' : 'Pro', dna) + '</section>';
   }
@@ -657,6 +690,17 @@
     S.save();
   }
 
+  // Founding Café: the first 50 cafés get Pro free for 3 months in exchange for a case study. Terms are written out; there is no live counter.
+  const FOUND_MONTHS = 3;
+  function foundingCard(pi) {
+    const r = root();
+    if (r.founding) return '<div class="card"><h2 class="sec-title first">' + I('badge-check', 20) + 'Founding Café</h2><p class="small">คุณอยู่ในโปรแกรมตั้งแต่ ' + dateTh(r.founding.at) + ' · Pro ฟรีถึง ' + dateTh(r.founding.until) + '</p><p class="muted small">เมื่อครบแล้วระบบกลับเป็น Starter เอง ไม่ตัดเงิน ข้อมูลอยู่ครบ</p></div>';
+    if (pi.paid) return '';
+    return '<div class="card"><h2 class="sec-title first">' + I('sparkles', 20) + 'Founding Café — Pro ฟรี ' + FOUND_MONTHS + ' เดือน</h2><p class="small">สำหรับ 50 ร้านแรกที่เข้าร่วม แลกกับการเป็นเคสศึกษา</p>' +
+      '<ul class="trust"><li>' + I('check', 15) + 'ได้ Pro เต็มรูปแบบ ' + FOUND_MONTHS + ' เดือน นับจากวันอนุมัติ</li><li>' + I('check', 15) + 'ไม่ต้องใส่บัตร ไม่ต่ออายุอัตโนมัติ ครบแล้วกลับ Starter</li><li>' + I('check', 15) + 'สิ่งที่ขอ: สัมภาษณ์ 1 ครั้ง (≈30 นาที) และอนุญาตให้ใช้ตัวเลขสรุปของร้านเป็นเคสศึกษา</li><li>' + I('check', 15) + 'คุณตรวจและอนุมัติข้อความก่อนเผยแพร่เสมอ และถอนความยินยอมได้ทุกเมื่อ</li><li>' + I('check', 15) + 'ไม่มีผลต่ออันดับร้านในผลแนะนำ</li></ul>' +
+      '<button class="btn ghost block" data-act="founding-open">ดูเงื่อนไขและสมัคร</button></div>';
+  }
+
   function tPlan(c) {
     const pi = planInfo(), per = opPeriod || pi.period, r = rec(c.id), boosted = r.boost && r.boost > Date.now(), root0 = root(), g = grantNow();
     const trialFree = !root0.trialUsed;
@@ -679,14 +723,15 @@
       ? '<div class="card"><b>Pro ทดลองฟรี — เหลือ ' + pi.days + ' วัน</b><div class="progress" role="progressbar" aria-label="วันที่ทดลองใช้" aria-valuemin="0" aria-valuemax="' + OTRIAL + '" aria-valuenow="' + (OTRIAL - pi.days) + '"><span style="width:' + (OTRIAL - pi.days) / OTRIAL * 100 + '%"></span></div><p class="muted small">หมดช่วงทดลองแล้วระบบกลับเป็น Starter อัตโนมัติ — ไม่ผูกบัตร ไม่เก็บเงิน และข้อมูลทั้งหมดอยู่ครบ</p></div>'
       : pi.paid ? '<div class="card"><b>แพ็กเกจ ' + PLAN_NAME[pi.plan] + '</b>' + (b ? '<ul class="xp-lines">' + lineRow('ใช้ได้ถึง', dateTh(b.until) + ' (อีก ' + b.days + ' วัน)') + lineRow('ต่ออายุรอบละ', money(b.amt) + (b.cad === 'year' ? ' / ปี' : ' / เดือน')) + lineRow('เริ่มนับจาก', dateTh(b.start)) + '</ul><button class="btn ghost sm" data-act="op-renew">ต่ออายุ</button>' : '') +
         '<p class="muted small">' + (root0.pay === 'monthly' ? 'ชำระทีละเดือน นับจากวันที่สมัคร ต้องต่อทุกเดือน · ' : '') + 'กลับไป Starter ได้ทุกเมื่อ</p></div>' : '';
-    const grant = g ? '<div class="card"><b>ใช้ ' + PLAN_NAME[g.plan] + ' ฟรี ' + (g.until ? 'ถึง ' + dateTh(g.until) : 'ตลอดไป') + '</b><p class="muted small">' + (g.n ? esc(g.n) + ' · ' : '') + 'ได้รับจากรหัสของผู้พัฒนา</p></div>' : '';
+    const grant = g ? '<div class="card"><b>ใช้ ' + PLAN_NAME[g.plan] + ' ฟรี ' + (g.until ? 'ถึง ' + dateTh(g.until) : 'ตลอดไป') + '</b><p class="muted small">' + (g.n ? esc(g.n) + ' · ' : '') + (g.id === 'founding' ? 'โปรแกรม Founding Café — ครบแล้วกลับเป็น Starter เอง ไม่ต้องยกเลิก' : 'ได้รับจากรหัสของผู้พัฒนา') + '</p></div>' : '';
     const pending = q ? '<div class="card"><b>รอตรวจสอบการชำระเงิน</b><ul class="xp-lines">' + lineRow('แพ็กเกจ', PLAN_NAME[q.plan] + (q.months === 12 ? ' · รายปี' : ' · รายเดือน')) + lineRow('ยอด', money(q.amt)) + lineRow('รหัสอ้างอิง', esc(q.ref)) + '</ul><p class="muted small">โอนแล้วส่งสลิปให้ผู้พัฒนา เมื่อตรวจว่าเงินเข้าแล้วจะได้รหัสเปิดใช้งาน มาใส่ด้านล่าง</p><div class="row2"><button class="btn ghost" data-act="op-pay-info">วิธีโอน</button><button class="btn text" data-act="op-pending-cancel">ยกเลิกคำขอ</button></div></div>' : '';
+    const founding = foundingCard(pi);
     const act = '<div class="card"><h2 class="sec-title first">' + I('lock', 20) + 'มีรหัสเปิดใช้งาน?</h2><div class="cc-in tok"><input id="actCode" type="text" autocomplete="off" spellcheck="false" placeholder="วางรหัสที่ผู้พัฒนาส่งให้" aria-describedby="actMsg"><button class="btn primary sm" data-act="op-activate">ใช้รหัส</button></div><p id="actMsg" class="muted small" role="status">ใช้กับรหัสยืนยันการชำระเงิน หรือรหัสให้ใช้ฟรีจากผู้พัฒนา</p></div>';
     return stHead(c, 'แพ็กเกจ', 'ใช้ Starter ฟรีได้ตลอด — อัปเกรดเมื่อพร้อมโตเท่านั้น') + '<section class="pad stagger">' + billNote() + devNote() + grant + banner + pending +
       '<div class="seg" role="radiogroup" aria-label="รอบการชำระ"><button role="radio" aria-checked="' + (per === 'year') + '" class="' + (per === 'year' ? 'on' : '') + '" data-act="op-period" data-k="year">รายปี <em>จ่าย 10 ใช้ 12</em></button><button role="radio" aria-checked="' + (per === 'month') + '" class="' + (per === 'month' ? 'on' : '') + '" data-act="op-period" data-k="month">รายเดือน</button></div>' +
       tier('free', 'Starter', '', '฿0', 'ฟรีตลอด ไม่ต้องใช้บัตร', ['Profile ร้าน เมนู ราคา Photo Spot', 'สถานะร้านสด, Owner Mood, Owner’s Pick', 'รับ Check-in + Verified', 'อีเว้นท์ได้สูงสุด 2 งานพร้อมกัน', 'ออกแบบ Passport Stamp และโค้ดของร้าน', 'สถิติพื้นฐาน']) +
       tier('pro', 'Pro', 'คุ้มที่สุดสำหรับร้านเดี่ยว', perTxt('pro'), perSub('pro'), ['ทุกอย่างใน Starter', 'Café Quest + Passport Reward', 'Café Moment ส่งตรงกลุ่ม', 'Analytics เต็ม + AI Insight', 'Advanced Café DNA']) +
-      tier('group', 'Group', 'สำหรับหลายสาขา', perTxt('group'), perSub('group'), ['ทุกอย่างใน Pro', 'จัดการได้ถึง 5 สาขา', 'ทีมงาน 5 คน แยกสิทธิ์', 'ส่งออกรายงาน CSV']) + CM.ent.cardsHtml('owner') + act +
+      tier('group', 'Group', 'สำหรับหลายสาขา', perTxt('group'), perSub('group'), ['ทุกอย่างใน Pro', 'จัดการได้ถึง 5 สาขา', 'ทีมงาน 5 คน แยกสิทธิ์', 'ส่งออกรายงาน CSV']) + CM.ent.cardsHtml('owner') + founding + act +
       '<div class="card boost"><div class="set-row"><div><h2 class="sec-title first">' + I('bolt', 20) + 'Café Moment Boost</h2><p class="muted small">เพิ่ม 1 ช่อง “Sponsored” ใน Café Moment ให้คนที่ Mood ตรงกับงานของคุณ</p></div>' +
       (pi.plan !== 'free' ? sw(!!boosted, 'op-boost', 'b', 'เปิด Boost') : '') + '</div><p class="small"><b>' + money(BOOST) + ' / สัปดาห์</b>' + (boosted ? ' · เปิดถึง ' + dateTh(r.boost) : '') + '</p>' +
       (pi.plan === 'free' ? '<p class="muted small">ใช้ได้กับ Pro ขึ้นไป</p>' : '') + '<p class="muted small">ติดป้าย Sponsored ชัดเจน, มีได้ไม่เกิน 1 ช่องต่อหน้า และ <b>ไม่เปลี่ยนอันดับร้านในผลแนะนำ</b></p></div>' +
@@ -717,7 +762,7 @@
     });
   }
   const readBanner = (f) => readImage(f, 1200, 675, 380000);
-  const newDraft = () => ({ id: 'e' + Date.now(), banner: '', title: '', desc: '', type: 'live', startDate: localDay(0), endDate: localDay(0), startTime: '18:00', endTime: '20:00', tags: [], items: [], sets: [], gives: [], code: '', codeGives: '', views: 0, saves: 0 });
+  const newDraft = () => ({ id: 'e' + Date.now(), banner: '', title: '', desc: '', type: 'live', startDate: localDay(0), endDate: localDay(0), startTime: '18:00', endTime: '20:00', tags: [], items: [], sets: [], gives: [], code: '', codeGives: '', festival: '', ticket: { price: '', seats: '', pp: '' }, views: 0, saves: 0 });
   const EV_LABEL = { live: 'กำลังจัดอยู่', today: 'วันนี้', upcoming: 'เร็ว ๆ นี้', ended: 'จบแล้ว' };
 
   function tEvents(c) {
@@ -741,7 +786,8 @@
     const fld = (id, label, path, type, extra) => '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" data-ev="' + path + '" type="' + type + '" value="' + esc(String(get(path))) + '" ' + (extra || '') + '></div>';
     const rows = (k, defs, addLabel) => ev[k].map((row, i) => '<div class="ev-row">' + defs.map((d) => fld('ev-' + k + i + d[0], d[1], k + '.' + i + '.' + d[0], d[2], d[3])).join('') +
       '<button class="btn ghost sm" data-act="ev-del" data-k="' + k + '" data-i="' + i + '" aria-label="ลบแถวนี้">ลบแถว</button></div>').join('') + '<button class="btn ghost block" data-act="ev-add" data-k="' + k + '">+ ' + addLabel + '</button>';
-    const tags = D.MOODS.map((m) => '<button class="fchip' + (ev.tags.includes(m.id) ? ' on' : '') + '" data-act="ev-tag" data-k="' + m.id + '" aria-pressed="' + ev.tags.includes(m.id) + '">' + m.short + '</button>').join('');
+    const tags = D.MOODS.map((m) => '<button class="fchip' + (ev.tags.includes(m.id) ? ' on' : '') + '" data-act="ev-tag" data-k="' + m.id + '" aria-pressed="' + ev.tags.includes(m.id) + '">' + m.short + '</button>').join('') +
+      '<button class="fchip' + (ev.tags.includes('other') ? ' on' : '') + '" data-act="ev-tag" data-k="other" aria-pressed="' + ev.tags.includes('other') + '">อื่นๆ</button>';
     return stHead(c, isNew ? 'สร้างอีเว้นท์' : 'แก้ไขอีเว้นท์') + '<section class="pad stagger">' +
       '<div class="card"><h2 class="sec-title first">รายละเอียด</h2>' + fld('ev-title', 'ชื่ออีเว้นท์', 'title', 'text', 'maxlength="50" placeholder="เช่น Acoustic Night"') +
       '<div class="field"><label for="ev-type">ประเภท</label><select id="ev-type" data-ev="type">' + EVENT_TYPES.map((t) => '<option value="' + t[0] + '"' + (ev.type === t[0] ? ' selected' : '') + '>' + t[1] + ' · ' + t[2] + '</option>').join('') + '</select></div>' +
@@ -753,10 +799,13 @@
       '<p class="muted small">แนะนำภาพแนวนอนสัดส่วน 16:9 (PNG/JPG/WebP ไม่เกิน 10MB) ระบบครอปและย่อขนาดให้อัตโนมัติ</p></div>' +
       '<div class="card"><h2 class="sec-title first">' + I('clock', 20) + 'ระยะเวลา</h2><div class="hours">' + fld('ev-sd', 'วันเริ่ม', 'startDate', 'date') + fld('ev-ed', 'วันจบ', 'endDate', 'date', 'min="' + ev.startDate + '"') + fld('ev-st', 'เวลาเริ่ม (ต่อวัน)', 'startTime', 'time') + fld('ev-et', 'เวลาจบ (ต่อวัน)', 'endTime', 'time') + '</div>' +
       '<p class="muted small">จัดหลายวันได้ — เวลาเริ่ม/จบคือช่วงเวลาของแต่ละวัน</p></div>' +
-      '<div class="card"><h2 class="sec-title first">' + I('sparkles', 20) + 'ส่งให้คนที่ Mood แบบ</h2><div class="fchips" role="group" aria-label="Mood ที่เหมาะกับอีเว้นท์">' + tags + '</div></div>' +
+      '<div class="card"><h2 class="sec-title first">' + I('sparkles', 20) + 'ส่งให้คนที่ Mood แบบ</h2><div class="fchips" role="group" aria-label="Mood ที่เหมาะกับอีเว้นท์">' + tags + '</div>' + (ev.tags.includes('other') ? fld('ev-onote', 'อื่นๆ คืออะไร (ไม่บังคับ)', 'otherNote', 'text', 'maxlength="80" placeholder="เช่น ดนตรีสดเบา ๆ · มีมุมอ่านหนังสือ"') + '<p class="muted small">ลูกค้าที่พิมพ์ความต้องการใกล้เคียงกับข้อความนี้จะเจออีเว้นท์ของคุณ ถ้าไม่พิมพ์ จะส่งถึงเฉพาะคนที่เลือก Mood อื่นที่ติ๊กไว้</p>' : '') + '</div>' +
       '<div class="card"><h2 class="sec-title first">' + I('cup', 20) + 'เมนูในอีเว้นท์</h2>' + rows('items', [['name', 'ชื่อเมนู', 'text', 'maxlength="40"'], ['price', 'ราคา (฿)', 'number', 'min="0" max="9999" inputmode="numeric"']], 'เพิ่มเมนู') + '</div>' +
       '<div class="card"><h2 class="sec-title first">' + I('coffee', 20) + 'Set Menu</h2>' + rows('sets', [['name', 'ชื่อเซ็ต', 'text', 'maxlength="40"'], ['price', 'ราคาเซ็ต (฿)', 'number', 'min="0" max="9999" inputmode="numeric"'], ['includes', 'ในเซ็ตมีอะไรบ้าง', 'text', 'maxlength="80" placeholder="เครื่องดื่ม 2 แก้ว + ของหวาน"']], 'เพิ่มเซ็ตเมนู') + '</div>' +
       '<div class="card"><h2 class="sec-title first">' + I('sparkles', 20) + 'Give away</h2>' + rows('gives', [['name', 'ของแจก', 'text', 'maxlength="40"'], ['rule', 'เงื่อนไข', 'text', 'maxlength="80" placeholder="10 คนแรกที่ Check-in"'], ['qty', 'จำนวน (ชิ้น)', 'number', 'min="0" max="9999" inputmode="numeric"']], 'เพิ่มของแจก') + '</div>' +
+      '<div class="card"><h2 class="sec-title first">' + I('lantern', 20) + 'เทศกาล (ไม่บังคับ)</h2><div class="field"><label for="ev-fest">งานนี้อยู่ใน Collection ของเทศกาล</label><select id="ev-fest" data-ev="festival"><option value="">ไม่ระบุ (ระบบดูจากวันที่ให้เอง)</option>' + CM.thai.FEST.map((f) => '<option value="' + f.id + '"' + (ev.festival === f.id ? ' selected' : '') + '>' + f.th + '</option>').join('') + '</select></div></div>' +
+      '<div class="card"><h2 class="sec-title first">' + I('ticket', 20) + 'ตั๋วเข้างาน · PromptPay (ไม่บังคับ)</h2>' + fld('ev-tkp', 'ราคาตั๋ว (฿) — เว้นว่างถ้าไม่ขายตั๋ว', 'ticket.price', 'number', 'min="0" max="99999" inputmode="numeric"') + fld('ev-tks', 'จำนวนที่นั่ง', 'ticket.seats', 'number', 'min="0" max="99999" inputmode="numeric"') + fld('ev-tkpp', 'พร้อมเพย์ของร้าน (เบอร์โทร 10 หลัก หรือเลขบัตร/นิติบุคคล 13 หลัก)', 'ticket.pp', 'text', 'maxlength="15" inputmode="numeric" autocomplete="off"') +
+      '<p class="muted small">เงินเข้าบัญชีร้านโดยตรง แอปสร้าง QR พร้อมยอดให้ลูกค้า แต่ยังตรวจสลิปอัตโนมัติไม่ได้จนกว่าจะมี backend — ร้านดูยอดเข้าเองแล้วยืนยันตั๋ว</p></div>' +
       '<div class="card"><h2 class="sec-title first">' + I('sparkles', 20) + 'โค้ดแจกในงาน (ไม่บังคับ)</h2>' + fld('ev-code', 'โค้ดที่แจกให้ลูกค้า', 'code', 'text', 'maxlength="16" autocapitalize="characters" autocomplete="off" placeholder="เช่น ACOUSTIC"') + fld('ev-codeGives', 'ลูกค้าที่ใส่โค้ดนี้ได้อะไร', 'codeGives', 'text', 'maxlength="60" placeholder="เช่น ลด ฿20 เมนูในงาน"') +
       '<p class="muted small">แจกโค้ดให้คนที่มางาน ลูกค้าใส่ที่ Profile → โค้ดของฉัน แล้วโค้ดจะถูกเก็บไว้พร้อมของที่ได้ ใช้ได้ถึงวันจบงาน</p></div>' +
       '<button class="btn primary lg" data-act="ev-save">เผยแพร่อีเว้นท์</button><a class="btn text block" href="#/studio/events">ยกเลิก</a></section>';
@@ -862,7 +911,12 @@
     H['st-switch'] = () => { root().cafeId = null; S.save(); api.render(); };
     H['st-status'] = (el) => { const r = rec(root().cafeId); r.status = el.dataset.k; r.statusTs = Date.now(); if (r.seats == null) r.seats = { quiet: 12, moderate: 6, busy: 1 }[r.status]; touch(r === null ? '' : root().cafeId); done(); };
     H['st-seats'] = (el) => { const r = rec(root().cafeId); r.seats = clamp((r.seats == null ? 5 : r.seats) + +el.dataset.d, 0, 99, 0); r.statusTs = Date.now(); if (!r.status) r.status = r.seats > 8 ? 'quiet' : r.seats > 2 ? 'moderate' : 'busy'; touch(root().cafeId); done(); };
-    H['st-mood'] = (el) => { const r = rec(root().cafeId), t = day(); if (r.mood === el.dataset.k && r.moodDay === t) r.mood = null; else { r.mood = el.dataset.k; r.moodDay = t; } touch(root().cafeId); done(); };
+    H['st-mood'] = (el) => { const r = rec(root().cafeId), t = day(); if (r.mood === el.dataset.k && r.moodDay === t) { r.mood = null; r.moodNote = ''; } else { r.mood = el.dataset.k; r.moodDay = t; if (r.mood !== 'other') r.moodNote = ''; } touch(root().cafeId); done(); };
+    document.addEventListener('change', (e) => {   // the optional “อื่นๆ” text saves when the field loses focus (no re-render, so typing is never interrupted)
+      if (e.target.id !== 'ownerMoodNote') return;
+      const r = rec(root().cafeId); if (r.mood !== 'other') return;
+      r.moodNote = e.target.value.trim().slice(0, 80); touch(root().cafeId); save(); toast('บันทึกแล้ว — ลูกค้าเห็นทันที');
+    });
     H['st-pick-save'] = () => {
       const r = rec(root().cafeId), sel = document.querySelector('input[name="pickDrink"]:checked');
       if (!sel) { toast('เลือกเมนูก่อนนะ'); return; }
@@ -872,6 +926,11 @@
     };
     H['st-pick-clear'] = () => { const r = rec(root().cafeId); r.pick = null; r.pickDay = ''; done('ยกเลิก Owner’s Pick แล้ว'); };
     H['st-fac'] = (el) => { const c = myCafe(), r = rec(c.id); if (!r.info) r.info = Object.assign({}, defaultInfo(c)); r.info[el.dataset.k] = !r.info[el.dataset.k]; touch(c.id); done(); };
+    H['st-transit-save'] = () => {
+      const st = val('trSt').trim(), wk = parseInt(val('trWk'), 10);
+      if (st && !(wk >= 1 && wk <= 60)) { toast('ใส่เวลาเดินเป็นนาที (1–60)'); return; }
+      rec(root().cafeId).transit = st ? { sys: val('trSys'), station: st, exit: val('trEx').trim(), walk: wk } : { sys: '', station: '', exit: '', walk: 0 }; touch(root().cafeId); done();
+    };
     H['st-hours-save'] = () => {
       const o = parseFloat(val('hOpen')), cl = parseFloat(val('hClose'));
       if (!(o >= 0 && cl > o && cl <= 28)) { toast('เวลาไม่ถูกต้อง (ปิดต้องหลังเปิด)'); return; }
@@ -910,16 +969,17 @@
       momentTags = new Set();
       api.openSheet('<h2 id="sheetTitle">สร้าง Café Moment</h2><div class="field"><label for="mTitle">หัวข้อ</label><input id="mTitle" type="text" maxlength="40" placeholder="Tonight at Café X"></div>' +
         '<div class="field"><label for="mBody">รายละเอียด / เวลา</label><input id="mBody" type="text" maxlength="70" placeholder="Live acoustic 18:00–20:00"></div>' +
-        '<p class="sh-h">ส่งให้คนที่ Mood แบบ</p><div class="fchips" role="group" aria-label="Mood ที่ต้องการ">' + D.MOODS.map((m) => '<button class="fchip" data-act="st-tag" data-k="' + m.id + '" aria-pressed="false">' + m.short + '</button>').join('') + '</div>' +
+        '<p class="sh-h">ส่งให้คนที่ Mood แบบ</p><div class="fchips" role="group" aria-label="Mood ที่ต้องการ">' + D.MOODS.map((m) => '<button class="fchip" data-act="st-tag" data-k="' + m.id + '" aria-pressed="false">' + m.short + '</button>').join('') + '<button class="fchip" data-act="st-tag" data-k="other" aria-pressed="false">อื่นๆ</button></div>' +
+        '<div class="field" id="mOtherWrap" hidden><label for="mOther">อื่นๆ คืออะไร <small class="muted">(ไม่บังคับ)</small></label><input id="mOther" type="text" maxlength="80" placeholder="เช่น ดนตรีสดเบา ๆ · มีมุมอ่านหนังสือ"></div>' +
         '<div class="field"><label for="mWeather">เหมาะกับอากาศ</label><select id="mWeather"><option value="">ไม่ระบุ</option><option value="rain">ฝนตก</option><option value="sunny">แดดดี</option><option value="cloudy">ครึ้มฟ้า</option></select></div>' +
         '<button class="btn primary lg" data-act="st-moment-save">เผยแพร่</button><button class="btn text block" data-act="close-sheet">ยกเลิก</button>');
     };
-    H['st-tag'] = (el) => { const k = el.dataset.k; if (momentTags.has(k)) momentTags.delete(k); else momentTags.add(k); el.classList.toggle('on', momentTags.has(k)); el.setAttribute('aria-pressed', momentTags.has(k)); };
+    H['st-tag'] = (el) => { const k = el.dataset.k; if (momentTags.has(k)) momentTags.delete(k); else momentTags.add(k); el.classList.toggle('on', momentTags.has(k)); el.setAttribute('aria-pressed', momentTags.has(k)); if (k === 'other') { const w = document.getElementById('mOtherWrap'); if (w) w.hidden = !momentTags.has(k); } };
     H['st-moment-save'] = () => {
       const title = val('mTitle').trim();
       if (!title || !momentTags.size) { toast('ใส่หัวข้อและเลือก Mood อย่างน้อย 1 อย่าง'); return; }
       const r = rec(root().cafeId);
-      r.moments.push({ id: 'm' + Date.now(), title, body: val('mBody').trim(), tags: Array.from(momentTags), weather: val('mWeather') || null });
+      r.moments.push({ id: 'm' + Date.now(), title, body: val('mBody').trim(), tags: Array.from(momentTags), otherNote: momentTags.has('other') ? val('mOther').trim().slice(0, 80) : '', weather: val('mWeather') || null });
       touch(root().cafeId); api.closeSheet(true); done('เผยแพร่ Café Moment แล้ว — แสดงในหน้า Home ของลูกค้าที่ตรงกลุ่ม');
     };
     H['st-moment-del'] = (el) => { const r = rec(root().cafeId); r.moments = r.moments.filter((m) => m.id !== el.dataset.id); refresh(); };
@@ -979,6 +1039,14 @@
       else return say(p.n || 'รหัสนี้ไม่มีผลกับแพ็กเกจ', true);
       r.tok = (r.tok || []).concat(p.i); S.save(); refresh(); toast(p.k === 'paid' ? 'ยืนยันการชำระเงินแล้ว — เปิดใช้ ' + PLAN_NAME[p.p] : 'ได้รับสิทธิ์ ' + PLAN_NAME[p.p] + ' ฟรีแล้ว');
     };
+    H['founding-open'] = () => api.openSheet('<h2 id="sheetTitle">สมัคร Founding Café</h2><ul class="xp-lines">' + lineRow('สิทธิ์ที่ได้', 'Pro ฟรี ' + FOUND_MONTHS + ' เดือน') + lineRow('ค่าใช้จ่าย', '฿0') + lineRow('หลังครบ', 'กลับ Starter อัตโนมัติ') + '</ul><p class="small">สิ่งที่เราขอ: สัมภาษณ์ 1 ครั้ง และใช้ตัวเลขสรุปของร้านเป็นเคสศึกษา โดยคุณอนุมัติข้อความก่อนเผยแพร่</p><label class="chk"><input type="checkbox" id="foundOk"> ฉันอ่านและยอมรับเงื่อนไขข้างต้น</label><p id="foundMsg" class="muted small" role="status">เดโม: อนุมัติทันที ของจริงทีมงานจะตรวจก่อนและมีจำกัด 50 ร้าน</p><button class="btn primary lg" data-act="founding-do">สมัคร</button><button class="btn text block" data-act="close-sheet">ไว้ก่อน</button>');
+    H['founding-do'] = () => {
+      const ok = document.getElementById('foundOk'), r = root();
+      if (!ok || !ok.checked) { const m = document.getElementById('foundMsg'); m.textContent = 'ติ๊กยอมรับเงื่อนไขก่อนนะ'; m.classList.add('bad'); return; }
+      if (r.founding) return;
+      const until = addMonths(Date.now(), FOUND_MONTHS);
+      r.founding = { at: Date.now(), until, consent: true }; r.grant = { plan: 'pro', until, id: 'founding', n: 'Founding Café' }; r.use = null; S.save(); api.closeSheet(true); refresh(); toast('ยินดีต้อนรับ Founding Café — Pro ฟรีถึง ' + dateTh(until));
+    };
     H['op-downgrade'] = () => api.openSheet('<h2 id="sheetTitle">กลับไป Starter?</h2><ul class="xp-lines">' + orow('ข้อมูลร้าน เมนู อีเว้นท์', 'อยู่ครบ') + orow('Quest / Reward / Moment', 'พักไว้ (เปิดคืนได้)') + orow('การตัดเงินรอบถัดไป', 'ยกเลิก') + '</ul><button class="btn danger lg" data-act="op-downgrade-do">ยืนยัน</button><button class="btn text block" data-act="close-sheet">เก็บแพ็กเกจไว้</button>');
     H['op-downgrade-do'] = () => { const r = root(); r.plan = 'free'; r.paid = false; r.trialEnd = 0; r.paidUntil = 0; r.pending = null; if (heldPlan() !== 'free') r.use = 'free'; D.CAFES.forEach((c) => { const x = peek(c.id); if (x) x.boost = 0; }); S.save(); api.closeSheet(true); refresh(); toast('กลับเป็น Starter แล้ว — ข้อมูลอยู่ครบ'); };
     H['op-boost'] = () => { const r = rec(root().cafeId); r.boost = r.boost > Date.now() ? 0 : Date.now() + 7 * DAYMS; S.save(); api.render(true); toast(r.boost ? 'เปิด Boost 7 วัน (เดโม ไม่เก็บเงินจริง)' : 'ปิด Boost แล้ว'); };
@@ -1010,15 +1078,18 @@
     H['ev-delete'] = (el) => { const r = rec(root().cafeId); r.events = r.events.filter((x) => x.id !== el.dataset.id); S.save(); api.render(true); toast('ลบอีเว้นท์แล้ว'); };
     H['ev-add'] = (el) => { ev[el.dataset.k].push(el.dataset.k === 'items' ? { name: '', price: '' } : el.dataset.k === 'sets' ? { name: '', price: '', includes: '' } : { name: '', rule: '', qty: '' }); api.render(true); };
     H['ev-del'] = (el) => { ev[el.dataset.k].splice(+el.dataset.i, 1); api.render(true); };
-    H['ev-tag'] = (el) => { const k = el.dataset.k, i = ev.tags.indexOf(k); if (i >= 0) ev.tags.splice(i, 1); else ev.tags.push(k); el.classList.toggle('on', i < 0); el.setAttribute('aria-pressed', i < 0); };
+    H['ev-tag'] = (el) => { const k = el.dataset.k, i = ev.tags.indexOf(k); if (i >= 0) ev.tags.splice(i, 1); else ev.tags.push(k); el.classList.toggle('on', i < 0); el.setAttribute('aria-pressed', i < 0); if (k === 'other') api.render(true); };
     H['ev-save'] = () => {
       const c = myCafe(), r = rec(c.id);
       const num = (v) => { const n = parseInt(v, 10); return n > 0 ? n : 0; };
-      const e = { id: ev.id, banner: ev.banner || '', title: ev.title.trim(), desc: ev.desc.trim(), type: ev.type, startDate: ev.startDate, endDate: ev.endDate, startTime: ev.startTime, endTime: ev.endTime, tags: ev.tags.slice(),
+      const e = { id: ev.id, banner: ev.banner || '', title: ev.title.trim(), desc: ev.desc.trim(), type: ev.type, startDate: ev.startDate, endDate: ev.endDate, startTime: ev.startTime, endTime: ev.endTime, tags: ev.tags.slice(), otherNote: ev.tags.includes('other') ? String(ev.otherNote || '').trim().slice(0, 80) : '',
         items: ev.items.filter((x) => String(x.name).trim()).map((x) => ({ name: String(x.name).trim(), price: num(x.price) })),
         sets: ev.sets.filter((x) => String(x.name).trim()).map((x) => ({ name: String(x.name).trim(), price: num(x.price), includes: String(x.includes || '').trim() })),
         gives: ev.gives.filter((x) => String(x.name).trim()).map((x) => ({ name: String(x.name).trim(), rule: String(x.rule || '').trim(), qty: num(x.qty) })),
-        code: String(ev.code || '').trim().toUpperCase(), codeGives: String(ev.codeGives || '').trim(), views: ev.views || 0, saves: ev.saves || 0 };
+        code: String(ev.code || '').trim().toUpperCase(), codeGives: String(ev.codeGives || '').trim(), festival: ev.festival || '', views: ev.views || 0, saves: ev.saves || 0 };
+      const tkp = num((ev.ticket || {}).price);
+      if (tkp > 0) e.ticket = { price: tkp, seats: num(ev.ticket.seats), pp: String(ev.ticket.pp || '').replace(/\D/g, '') };
+      if (e.ticket && !CM.thai.ppTarget(e.ticket.pp)) return toast('ใส่พร้อมเพย์ให้ถูกต้อง (เบอร์ 10 หลัก หรือเลข 13 หลัก) ลูกค้าจะโอนเข้าบัญชีนี้');
       if (!e.title) return toast('ใส่ชื่ออีเว้นท์ก่อนนะ');
       if (!e.startDate || !e.endDate || e.endDate < e.startDate) return toast('วันจบต้องไม่ก่อนวันเริ่ม');
       if (!e.startTime || !e.endTime || (e.startDate === e.endDate && toMin(e.endTime) <= toMin(e.startTime))) return toast('เวลาจบต้องหลังเวลาเริ่ม');
@@ -1114,7 +1185,7 @@
     });
   }
 
-  CM.studio = { install, apply, view, track: trackKey, badgesHtml, liveChip, liveBanner, pickCard, questCard, rewardCard, facilitiesHtml, dnaHtml,
-    questFor, rewardFor, momentsFor, isVerified, myCafe,
+  CM.studio = { install, apply, view, otherNotes, track: trackKey, badgesHtml, liveChip, liveBanner, pickCard, questCard, rewardCard, facilitiesHtml, dnaHtml,
+    questFor, rewardFor, momentsFor, isVerified, myCafe, facilityOn, ownerTransit: (c) => { const r = peek(c.id); return (r && r.transit) || null; },
     eventsAll, eventById, eventByCode, eventStatus, eventsRelevant, isSaved, trackEvent, typeLabel, passStatus, passEarned, passAward, passportCard, lookupCode, resetUse: () => { root().use = null; S.save(); }, pubReset: () => { Object.keys(pubCache).forEach((k) => delete pubCache[k]); }, readImage, TYPE_COLORS, TYPE_TH };
 })();

@@ -118,7 +118,7 @@
       const q = pend()[p.id], pi = CM.dev.pay(), cafe = CM.studio && CM.studio.myCafe ? CM.studio.myCafe() : null;
       const code = CM.dev.payCode({ r: q.ref, pr: p.id, o: q.opt, a: q.amt, t: q.ts, c: cafe ? cafe.id : '', u: q.aud });
       const msg = 'ขอ' + (p.status === 'pre' ? 'พรีออเดอร์ ' : 'สั่งซื้อ ') + p.name + ' ยอด ' + money(q.amt) + ' รหัสอ้างอิง ' + q.ref + '\n' + code;
-      api.openSheet('<h2 id="sheetTitle">โอนเงิน ' + money(q.amt) + '</h2>' + CM.dev.payBox() + '<ul class="xp-lines">' + row('รหัสอ้างอิง', esc(q.ref)) + '</ul>' +
+      api.openSheet('<h2 id="sheetTitle">โอนเงิน ' + money(q.amt) + '</h2>' + CM.dev.payBox(q.amt) + '<ul class="xp-lines">' + row('รหัสอ้างอิง', esc(q.ref)) + '</ul>' +
         '<ol class="pay-steps"><li>โอนยอดตามด้านบน (สแกน QR หรือโอนตามเลขบัญชี)</li><li>กด “คัดลอกข้อความ” แล้วส่งให้ผู้พัฒนาพร้อมสลิป' + (pi && pi.contact ? ' ทาง ' + esc(pi.contact) : '') + '</li><li>ผู้พัฒนาตรวจว่าเงินเข้าแล้วจะส่ง <b>รหัสเปิดใช้งาน</b> ให้ — ใส่ในช่อง “มีรหัสเปิดใช้งาน?”</li></ol>' +
         '<button class="btn primary lg" data-act="copy-text" data-v="' + esc(msg) + '">คัดลอกข้อความส่งผู้พัฒนา</button><button class="btn text block" data-act="close-sheet">ปิด</button>');
     }

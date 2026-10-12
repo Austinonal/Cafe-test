@@ -17,10 +17,15 @@
     'เจริญกรุง': 'บางรัก', 'บางรัก': 'บางรัก', 'สีลม': 'บางรัก', 'อารีย์': 'พญาไท', 'สาทร': 'สาทร', 'รัชดา': 'ห้วยขวาง', 'พระโขนง': 'พระโขนง', 'บางนา': 'บางนา', 'ธนบุรี': 'ธนบุรี' };
   const distOf = (c) => c.district || DISTRICT[c.area] || c.area;
   D.districtOf = distOf;   // the developer console groups cafés by it
-  const filt = { areas: new Set(), near: false, events: false };   // applied filter: areas holds เขต names
+  const filt = { areas: new Set(), near: false, events: false, tags: new Set() };   // applied filter: areas holds เขต names; tags = travel / comfort / local keys below
+  // v23: Thai-context filters. region tags imply a local café.
+  const TAGS = [['transit', 'ใกล้รถไฟฟ้า (เดิน ≤ 10 นาที)', 'train', (c) => CM.thai.nearTransit(c)], ['moto', 'มีที่จอดมอเตอร์ไซค์', 'moto', (c) => ST.facilityOn(c, 'moto')],
+    ['car', 'มีที่จอดรถยนต์', 'car', (c) => ST.facilityOn(c, 'parking')], ['air', 'เครื่องฟอกอากาศ / ห้องแอร์', 'air', (c) => E.hasAir(c)],
+    ['local', 'ร้านท้องถิ่น', 'pin', (c) => !!c.local], ['north', 'ท้องถิ่น · ภาคเหนือ', 'pin', (c) => c.region === 'north'], ['south', 'ท้องถิ่น · ภาคใต้', 'pin', (c) => c.region === 'south']];
+  const tagOk = (c) => Array.from(filt.tags).every((k) => TAGS.find((t) => t[0] === k)[3](c));
   const areaOn = () => filt.areas.size > 0 || filt.near;
-  const filtOn = () => areaOn() || filt.events;
-  const fN = () => filt.areas.size + (filt.near ? 1 : 0) + (filt.events ? 1 : 0);
+  const filtOn = () => areaOn() || filt.events || filt.tags.size > 0;
+  const fN = () => filt.areas.size + (filt.near ? 1 : 0) + (filt.events ? 1 : 0) + filt.tags.size;
   // Best running/upcoming event of a café: live first, then today, then soonest.
   const EV_RANK = { live: 0, today: 1, upcoming: 2 };
   const evOf = (c) => ST.eventsAll().filter((e) => e.cafeId === c.id && ST.eventStatus(e) !== 'ended').sort((a, b) => EV_RANK[ST.eventStatus(a)] - EV_RANK[ST.eventStatus(b)] || (a.startDate + a.startTime < b.startDate + b.startTime ? -1 : 1))[0];
@@ -35,7 +40,8 @@
 
   /* ---------- helpers ---------- */
   const session = () => { const st = S.get(); return { profile: st.profile, mood: st.mood, ctx: W.ctx }; };
-  const center = () => { const l = S.get().location; return l.source === 'gps' && E.distKm(l, D.DEMO_CENTER) < 40 ? l : D.DEMO_CENTER; };
+  const nearAnyCafe = (l) => E.distKm(l, D.DEMO_CENTER) < 40 || D.CAFES.some((c) => E.distKm(l, c) < 40);   // v23: cafés exist outside Bangkok too
+  const center = () => { const l = S.get().location; return l.source === 'gps' && nearAnyCafe(l) ? l : D.DEMO_CENTER; };
   const fmtDist = (c) => { const k = E.distKm(center(), c); return k < 1 ? Math.round(k * 100) * 10 + ' ม.' : k.toFixed(1) + ' กม.'; };
   const priceText = (c) => { const p = c.drinks.map((d) => d.price); return '฿' + Math.min.apply(null, p) + '–' + Math.max.apply(null, p); };
   const typeTh = { coffee: 'กาแฟ', latte: 'ลาเต้', matcha: 'มัทฉะ', tea: 'ชา', signature: 'ซิกเนเจอร์' };
@@ -59,7 +65,7 @@
       '<b aria-hidden="true"><span>' + pct + '<small>%</small></span></b></div>';
   }
 
-  const chipInner = () => I(W.ctx.icon, 18) + '<span>' + esc(W.ctx.label) + (W.ctx.temp != null ? ' ' + W.ctx.temp + '°' : '') + '</span>';
+  const chipInner = () => I(W.ctx.icon, 18) + '<span>' + esc(W.ctx.label) + (W.ctx.temp != null ? ' ' + W.ctx.temp + '°' : '') + (W.ctx.pm >= E.PM_HIGH ? ' · PM ' + Math.round(W.ctx.pm) : '') + '</span>';
   const weatherChip = () => '<button class="wchip" data-act="open-weather" data-weather-chip aria-label="สภาพอากาศตอนนี้: ' + esc(W.describe()) + ' — แตะเพื่อเปลี่ยน">' + chipInner() + '</button>';
 
   const backBtn = (fallback) => '<button class="iconbtn" data-act="back" data-fallback="' + fallback + '" aria-label="ย้อนกลับ">' + I('arrow-left', 22) + '</button>';
@@ -85,7 +91,7 @@
     if (s.hidden.eligible && s.hidden.score >= 80) h += '<span class="badge gem">' + I('gem', 13) + 'Hidden gem</span>';
     h += ST.badgesHtml(s.cafe);
     h += '<span class="badge ' + (s.open.open ? 'ok' : 'off') + '">' + I('clock', 13) + esc(s.open.text) + '</span>' + ST.liveChip(s.cafe);
-    return h;
+    return h + CM.thai.tagsHtml(s.cafe);
   }
 
   function rowCard(s, o) {
@@ -98,7 +104,7 @@
       '<p class="why">' + esc(o.line || s.reasons[0]) + '</p></div>' +
       (o.hiddenScore ? ring(s.hidden.score, 52, 'gemring') : ring(s.match, 52)) +
       '<div class="rc-tags">' + (o.ev ? '<span class="evtag ev-' + EV_STATUS[ST.eventStatus(o.ev)][1] + '">' + I('star', 13) + '<b>' + EV_STATUS[ST.eventStatus(o.ev)][0] + '</b><span>' + esc(o.ev.title) + '</span></span>' : '') + ST.liveChip(c) +
-      (s.open.open ? '' : '<span class="badge off">' + I('clock', 13) + esc(s.open.text) + '</span>') + '</div></a>';
+      (s.open.open ? '' : '<span class="badge off">' + I('clock', 13) + esc(s.open.text) + '</span>') + CM.thai.tagsHtml(c, true) + '</div></a>';
   }
 
   /* ---------- views ---------- */
@@ -168,13 +174,13 @@
   function searchHtml(q) {
     q = q.trim().toLowerCase();
     const inArea = (c) => !areaOn() || filt.areas.has(distOf(c)) || (filt.near && E.distKm(center(), c) <= 5);
-    const hits = E.rank(session()).filter((s) => inArea(s.cafe) && (!filt.events || evOf(s.cafe)) && [s.cafe.name, s.cafe.area, distOf(s.cafe), s.cafe.tagline].concat(s.cafe.drinks.map((d) => d.name)).join(' ').toLowerCase().includes(q));
+    const hits = E.rank(session()).filter((s) => inArea(s.cafe) && tagOk(s.cafe) && (!filt.events || evOf(s.cafe)) && [s.cafe.name, s.cafe.area, distOf(s.cafe), s.cafe.tagline].concat(s.cafe.drinks.map((d) => d.name)).join(' ').toLowerCase().includes(q));
     // Cafés with an event go first (live > today > soon), then the rest; each group keeps its Match order.
     hits.forEach((s) => { s.ev = evOf(s.cafe); });
     hits.sort((a, b) => (a.ev ? EV_RANK[ST.eventStatus(a.ev)] : 9) - (b.ev ? EV_RANK[ST.eventStatus(b.ev)] : 9));
     const withEv = hits.filter((s) => s.ev), rest = hits.filter((s) => !s.ev);
     const group = (t, l) => (l.length ? (withEv.length && rest.length ? '<h2 class="grp">' + t + '</h2>' : '') + '<div class="list">' + l.map((s) => rowCard(s, { line: s.cafe.tagline, ev: s.ev })).join('') + '</div>' : '');
-    const chips = (filt.events ? '<button class="fchip on" data-act="filter-remove" data-k="@ev">มีอีเว้นท์ช่วงนี้ ' + I('x', 14) + '</button>' : '') + (filt.near ? '<button class="fchip on" data-act="filter-remove" data-k="@near">ใกล้ฉัน ' + I('x', 14) + '</button>' : '') +
+    const chips = (filt.events ? '<button class="fchip on" data-act="filter-remove" data-k="@ev">มีอีเว้นท์ช่วงนี้ ' + I('x', 14) + '</button>' : '') + (filt.near ? '<button class="fchip on" data-act="filter-remove" data-k="@near">ใกล้ฉัน ' + I('x', 14) + '</button>' : '') + [...filt.tags].map((k) => '<button class="fchip on" data-act="filter-remove" data-k="#' + k + '">' + esc(TAGS.find((t) => t[0] === k)[1]) + ' ' + I('x', 14) + '</button>').join('') +
       [...filt.areas].map((a) => '<button class="fchip on" data-act="filter-remove" data-k="' + esc(a) + '">' + esc(a) + ' ' + I('x', 14) + '</button>').join('');
     return (chips ? '<div class="fchips wrapchips" aria-label="ตัวกรองที่ใช้อยู่">' + chips + '</div>' : '') + '<p class="muted small" role="status">' + (hits.length ? (q || filtOn() ? 'พบ ' : 'ทั้งหมด ') + hits.length + ' ร้าน' : 'ไม่พบร้านที่ตรงกับ “' + esc(q) + '”') + '</p>' +
       (hits.length ? group(I('star', 16) + ' มีอีเว้นท์ช่วงนี้', withEv) + group('คาเฟ่อื่น ๆ', rest)
@@ -191,14 +197,23 @@
     const moodLine = hasMood
       ? '<p class="mood-line">Your Café Mood · <b>' + esc(E.moodHeadline(ses.mood, W.ctx)) + '</b><span class="inline-ic">' + I(W.ctx.icon, 18) + '</span></p>'
       : '<p class="muted small">ยังไม่ได้เลือก mood — ตอนนี้เลือกจากนิสัยคาเฟ่ของคุณและอากาศ</p>';
-    return '<h2 class="sec-title">' + I('sparkles', 20) + 'Recommended for You</h2>' + moodLine +
-      heroCard(ranked[0]) + '<div class="list">' + ranked.slice(1, 3).map((s) => rowCard(s)).join('') + '</div>' +
+    return CM.thai.comfortHtml() + CM.thai.festBannerHtml() + otherMatchHtml(ses) + '<h2 class="sec-title">' + I('sparkles', 20) + 'Recommended for You</h2>' + moodLine +
+      heroCard(ranked[0]) + CM.thai.homeFirstTime(ranked[0].cafe) + '<div class="list">' + ranked.slice(1, 3).map((s) => rowCard(s)).join('') + '</div>' +
       (hasMood ? '<a class="btn ghost block" href="#/results">ดูทั้งหมด ' + I('chevron-right', 18) + '</a>' : '') +
       '<h2 class="sec-title">' + I('cup', 20) + 'Today’s Drink</h2>' +
       '<a class="drink-card" href="#/drink"><span class="mr-art">' + A.drinkArt(dp.drink) + '</span><span class="dc-t"><b>' + esc(dp.drink.name) + '</b><small>' + esc(dp.cafe.name) + ' · ฿' + dp.drink.price + '</small><small class="why">' + esc(dp.reasons[0]) + '</small></span>' + I('chevron-right', 20) + '</a>' +
       eventsHomeHtml(ses) + momentsHtml(ses) +
       '<h2 class="sec-title">' + I('gem', 20) + 'Hidden Nearby</h2>' +
       '<a class="drink-card" href="#/hidden"><span class="dc-ic">' + I('gem', 26) + '</span><span class="dc-t"><b>' + near.length + ' cafés discovered</b><small>' + (near.slice(0, 2).map((s) => esc(s.cafe.name)).join(' · ') || 'ลองเปิดดูร้านลับทั้งหมด') + '</small></span>' + I('chevron-right', 20) + '</a>';
+  }
+
+  // “อื่นๆ”: cafés whose owner wrote something close to what the customer typed — listed on their own so they are found even when the usual ranking puts them lower
+  function otherMatchHtml(ses) {
+    const text = ses.mood && ses.mood.text;
+    if (!text) return '';
+    const hits = D.CAFES.map((c) => ({ c, h: E.otherHit(text, c) })).filter((x) => x.h).sort((a, b) => b.h.sim - a.h.sim).slice(0, 3);
+    if (!hits.length) return '';
+    return '<h2 class="sec-title">' + I('pin', 20) + 'ตรงกับคำของคุณ</h2><div class="list">' + hits.map((x) => rowCard(E.scoreCafe(x.c, ses), { line: 'ร้านบอกว่า “' + x.h.note + '”' })).join('') + '</div>';
   }
 
   function momentsHtml(ses) {
@@ -215,28 +230,34 @@
     const by = {};
     D.CAFES.forEach((c) => { (by[distOf(c)] = by[distOf(c)] || []).push(c); });
     const ds = Object.keys(by).sort((x, y) => by[y].length - by[x].length || x.localeCompare(y, 'th'));
-    const sub = ds.map((d) => '<li data-s="' + esc((d + ' ' + by[d].map((c) => c.area + ' ' + c.name).join(' ')).toLowerCase()) + '"><label class="arow sub"><input type="checkbox" data-d value="' + esc(d) + '"' + (filt.areas.has(d) ? ' checked' : '') + '><span class="rb" aria-hidden="true">' + I('check', 14) + '</span><b>เขต' + esc(d) + '</b><small class="cnt">' + by[d].length + '</small></label></li>').join('');
+    const provName = (c) => c.province || PROVINCE, dTh = (d) => (by[d][0].province ? 'อ.' : 'เขต') + d;
+    const provs = Array.from(new Set(ds.map((d) => provName(by[d][0]))));
+    const subOf = (pv) => ds.filter((d) => provName(by[d][0]) === pv).map((d) => '<li data-s="' + esc((d + ' ' + by[d].map((c) => c.area + ' ' + c.name).join(' ')).toLowerCase()) + '"><label class="arow sub"><input type="checkbox" data-d value="' + esc(d) + '"' + (filt.areas.has(d) ? ' checked' : '') + '><span class="rb" aria-hidden="true">' + I('check', 14) + '</span><b>' + esc(dTh(d)) + '</b><small class="cnt">' + by[d].length + '</small></label></li>').join('');
+    const provHtml = provs.map((pv) => '<li><div class="arow"><label><input type="checkbox" data-p><span class="rb" aria-hidden="true">' + I('check', 14) + '</span><b>' + esc(pv) + '</b><small class="cnt">' + D.CAFES.filter((c) => provName(c) === pv).length + '</small></label><button class="chev" data-act="area-expand" aria-expanded="true" aria-label="ซ่อนหรือแสดงเขต">' + I('chevron-down', 20) + '</button></div><ul class="dists">' + subOf(pv) + '</ul></li>').join('');
+    const tagRows = TAGS.map((t) => '<label class="arow near" data-new="' + (t[0] === 'moto' || t[0] === 'car' ? 6 : t[0] === 'transit' ? 5 : t[0] === 'air' ? 7 : 9) + '"><input type="checkbox" data-t value="' + t[0] + '"' + (filt.tags.has(t[0]) ? ' checked' : '') + '><span class="rb" aria-hidden="true">' + I('check', 14) + '</span>' + I(t[2], 22) + '<b>' + t[1] + '</b><small class="cnt">' + D.CAFES.filter(t[3]).length + '</small></label>').join('');
     openSheet('<div class="fs-head"><button class="iconbtn" data-act="close-sheet" aria-label="ปิด">' + I('x', 22) + '</button></div>' +
       '<h2 id="sheetTitle" class="center">ตัวกรอง</h2><p class="muted center">เลือกได้หลายเขต ตัวเลขท้ายชื่อคือจำนวนคาเฟ่ในเขตนั้น</p>' +
       '<div class="search">' + I('search', 20) + '<input id="areaSearch" type="search" autocomplete="off" aria-label="ค้นหาเขตหรือชื่อร้าน" placeholder="ค้นหาจากชื่อเขต ย่าน หรือชื่อร้าน"></div>' +
       '<label class="arow near"><input type="checkbox" id="nearMe"' + (filt.near ? ' checked' : '') + '><span class="rb" aria-hidden="true">' + I('check', 14) + '</span>' + I('target', 22) + '<b>ใกล้ฉัน</b><small>ในรัศมี 5 กม.</small></label>' +
       '<label class="arow near evnow"><input type="checkbox" id="evOnly"' + (filt.events ? ' checked' : '') + '><span class="rb" aria-hidden="true">' + I('check', 14) + '</span>' + I('star', 22) + '<b>มีอีเว้นท์ช่วงนี้</b><small class="cnt">' + new Set(ST.eventsAll().filter((e) => ST.eventStatus(e) !== 'ended').map((e) => e.cafeId)).size + '</small></label>' +
-      '<ul class="areas"><li><div class="arow"><label><input type="checkbox" data-p><span class="rb" aria-hidden="true">' + I('check', 14) + '</span><b>' + PROVINCE + '</b><small class="cnt">' + D.CAFES.length + '</small></label>' +
-      '<button class="chev" data-act="area-expand" aria-expanded="true" aria-label="ซ่อนหรือแสดงเขต">' + I('chevron-down', 20) + '</button></div>' +
-      '<ul class="dists">' + sub + '</ul></li></ul>' +
+      '<h3 class="sh-h">เดินทาง · อากาศ · ท้องถิ่น</h3>' + tagRows + '<h3 class="sh-h">พื้นที่</h3><ul class="areas">' + provHtml + '</ul>' +
       '<div class="fs-foot"><button class="btn text" data-act="filter-clear">ล้าง</button><button id="fApply" class="btn primary lg" data-act="filter-apply">ตกลง</button></div>');
     syncProv(); fCount();
     sheetRoot.firstElementChild.nextElementSibling.classList.add('tall');
   }
-  const syncProv = () => { const p = $('.sheet [data-p]'), d = $$('.sheet [data-d]'); if (p) p.checked = d.length > 0 && d.every((i) => i.checked); };
+  const announceStatus = () => { const st = $('[role=status]', view); if (st && st.textContent) CM.ux.sayLater(st.textContent, 300); };
+  const syncProv = () => { $$('.sheet [data-p]').forEach((p) => { const d = $$('[data-d]', p.closest('li')); p.checked = d.length > 0 && d.every((i) => i.checked); }); };
   const fCount = () => {
-    const n = $$('.sheet [data-d]:checked, #nearMe:checked, #evOnly:checked').length, b = $('#fApply');
+    const n = $$('.sheet [data-d]:checked, .sheet [data-t]:checked, #nearMe:checked, #evOnly:checked').length, b = $('#fApply');
     if (b) b.textContent = n ? 'ตกลง (' + n + ')' : 'ตกลง';
   };
 
   function refreshHome() {
     const el = $('#today');
-    if (el) el.innerHTML = homeBody();
+    if (!el) return;
+    el.innerHTML = homeBody();
+    const top = E.rank(session())[0];   // aria-live on the whole block would read every card; say just the headline instead
+    CM.ux.sayLater('อัปเดตคำแนะนำแล้ว อันดับแรก ' + top.cafe.name + ' ตรงกัน ' + top.match + ' เปอร์เซ็นต์', 600);
   }
 
   // Turn picker tiles (+ optional free text) into today's mood. Returns false if nothing usable.
@@ -245,7 +266,7 @@
     const moods = uniq(draftMoods.concat(a.moods)).slice(0, 3);
     if (!moods.length && !Object.keys(a.boosts).length) return false;
     const tileLabels = draftMoods.filter((id) => !a.moods.includes(id)).map((id) => D.MOOD_BY_ID[id].th);
-    S.patch({ mood: { moods, boosts: a.boosts, hidden: a.hidden, drink: a.drink, night: a.night, labels: uniq(tileLabels.concat(a.labels)), text } });
+    S.patch({ mood: { moods, boosts: a.boosts, hidden: a.hidden, drink: a.drink, night: a.night, local: a.local, indoor: a.indoor, air: a.air, first: a.first, labels: uniq(tileLabels.concat(a.labels)), text } });
     drinkIdx = 0;
     return true;
   }
@@ -257,9 +278,12 @@
       return '<button class="mood-tile' + (on ? ' on' : '') + '" data-act="toggle-mood" data-id="' + m.id + '" aria-pressed="' + on + '" style="--m:' + m.hue + '">' +
         '<span class="mt-ic">' + I(m.icon, 22) + '</span><span class="mt-t"><b>' + m.short + '</b><small>' + esc(m.thShort) + '</small></span>' +
         '<span class="mt-ck">' + I('check', 14) + '</span></button>';
-    }).join('');
-    const ex = ['อยากนั่งเงียบ ๆ คนเดียว อ่านหนังสือ แล้วอยากได้ร้านบรรยากาศดี', 'นัดเพื่อนถ่ายรูป อยากได้ร้านที่มีต้นไม้และแสงสวย ๆ', 'อยากหามัทฉะอร่อย ๆ ร้านลับ ไม่ค่อยมีคนรู้'];
-    const exChips = ex.map((t, i) => '<button class="chip" data-act="example" data-i="' + i + '">' + esc(t) + '</button>').join('');
+    }).join('') +
+      // "อื่นๆ": the mood isn't one of the eight → say it in your own words (opens the sentence box below)
+      '<button class="mood-tile other' + (draftText ? ' on' : '') + '" data-act="other-mood" aria-pressed="' + !!draftText + '" aria-controls="moodText" style="--m:#8A7664">' +
+      '<span class="mt-ic">' + I('sparkles', 22) + '</span><span class="mt-t"><b>Other · อื่นๆ</b><small>ไม่ตรงกับที่มี — เล่าเป็นคำพูดของคุณเอง</small></span><span class="mt-ck">' + I('check', 14) + '</span></button>';
+    const ex = ['อยากนั่งเงียบ ๆ คนเดียว อ่านหนังสือ แล้วอยากได้ร้านบรรยากาศดี', 'นัดเพื่อนถ่ายรูป อยากได้ร้านที่มีต้นไม้และแสงสวย ๆ', 'อยากหามัทฉะอร่อย ๆ ร้านลับ ไม่ค่อยมีคนรู้', 'แอ่วชิว ๆ นั่งยาว ฟีลบ้านสวน'];
+    const exChips = ex.map((t, i) => '<button class="chip"' + (i === 3 ? ' data-new="10"' : '') + ' data-act="example" data-i="' + i + '">' + esc(t) + '</button>').join('');
     const persona = ses.profile
       ? 'จับคู่กับ <a href="#/profile"><strong>' + esc(D.ARCHETYPE_BY_ID[ses.profile.archetype].name) + '</strong></a> ของคุณ'
       : '<a href="#/quiz/0">ทำ Quiz เพื่อให้แนะนำแม่นขึ้น</a>';
@@ -277,7 +301,7 @@
       '<p id="moodError" class="error" role="alert" hidden></p>' +
       '<button class="btn primary block" data-act="find">อ่าน mood ของฉัน</button></div></details>' +
       '<p class="muted small persona-line">' + persona + '</p>' +
-      '<div id="today" class="today" aria-live="polite">' + homeBody() + '</div></section>' };
+      '<div id="today" class="today">' + homeBody() + '</div></section>' };
   }
 
   /* ---------- ② Discover (explore hub) + lenses ---------- */
@@ -301,6 +325,9 @@
     nature: { title: 'Nature Cafés', icon: 'leaf', sub: 'ต้นไม้ สวน และธรรมชาติเต็มร้าน',
       build: (list) => list.filter((s) => s.cafe.attr.nature >= 7).sort((a, b) => (b.cafe.attr.nature - a.cafe.attr.nature) * 10 + (b.match - a.match))
         .map((s) => ({ s, line: s.cafe.tagline })) },
+    local: { title: 'ร้านท้องถิ่น', icon: 'pin', sub: 'กาแฟดอยภาคเหนือ โกปี๊ภาคใต้ และร้านที่มีตลาดนัดคาเฟ่ — เลือกเหนือ/ใต้ได้ที่ตัวกรอง',
+      build: (list) => list.filter((s) => s.cafe.local).sort((a, b) => (a.cafe.region < b.cafe.region ? -1 : a.cafe.region > b.cafe.region ? 1 : 0) || b.match - a.match)
+        .map((s) => ({ s, line: (s.cafe.region === 'north' ? 'ภาคเหนือ · ' : 'ภาคใต้ · ') + s.cafe.tagline })) },
     night: { title: 'Night Cafés', icon: 'moon', sub: 'เปิดดึก บรรยากาศไฟอุ่น — ร้านที่เปิดอยู่ตอนนี้ขึ้นก่อน',
       build: (list) => list.filter((s) => isNightCafe(s.cafe)).sort((a, b) => (b.open.open - a.open.open) * 100 + (b.match - a.match))
         .map((s) => ({ s, line: s.cafe.tagline })) }
@@ -317,8 +344,10 @@
       ['camera', 'Photo Spots', all.reduce((n, c) => n + c.spots.length, 0) + ' จุดถ่ายรูป พร้อมเวลาที่แสงสวย', '#/lens/photo'],
       ['cup', 'One Drink', 'แก้วของวันนี้: ' + dp.drink.name, '#/drink'],
       ['leaf', 'Nature Cafés', all.filter((c) => c.attr.nature >= 7).length + ' ร้านที่เต็มไปด้วยต้นไม้', '#/lens/nature'],
-      ['moon', 'Night Cafés', all.filter(isNightCafe).length + ' ร้านเปิดดึก ไฟอุ่น ๆ', '#/lens/night']
-    ].map((r) => '<a class="lens-card" href="' + r[3] + '"><span class="lens-ic">' + I(r[0], 26) + '</span><span class="lc-t"><b>' + r[1] + '</b><small>' + esc(r[2]) + '</small></span>' + I('chevron-right', 20) + '</a>').join('');
+      ['moon', 'Night Cafés', all.filter(isNightCafe).length + ' ร้านเปิดดึก ไฟอุ่น ๆ', '#/lens/night'],
+      ['lantern', 'เทศกาล', 'ลอยกระทง · สงกรานต์ · ปีใหม่ — Collection ร้านและอีเว้นท์', '#/fest', 8],
+      ['pin', 'ร้านท้องถิ่น', all.filter((c) => c.local).length + ' ร้านพื้นถิ่นภาคเหนือ/ใต้ และตลาดนัดคาเฟ่', '#/lens/local', 9]
+    ].map((r) => '<a class="lens-card"' + (r[4] ? ' data-new="' + r[4] + '"' : '') + ' href="' + r[3] + '"><span class="lens-ic">' + I(r[0], 26) + '</span><span class="lc-t"><b>' + r[1] + '</b><small>' + esc(r[2]) + '</small></span>' + I('chevron-right', 20) + '</a>').join('');
     return { nav: true, html:
       '<header class="hero-top ambient"><div class="topbar between"><span class="brand">' + I('compass', 20) + 'Discover</span>' + weatherChip() + '</div>' +
       '<h1 class="display">สำรวจคาเฟ่<br>แบบไม่ซ้ำเดิม</h1><p class="lead sm">เลือกมุมมองที่อยากเล่นวันนี้</p></header>' +
@@ -359,7 +388,11 @@
     ['coffee', 'Coffee', (s) => s.cafe.attr.coffee >= 8],
     ['outdoor', 'Outdoor', (s) => s.cafe.attr.outdoor >= 5],
     ['rainy', 'Rainy', (s) => E.weatherFit(s.cafe, { kind: 'rain', night: false }) >= .62],
-    ['night', 'Night', (s) => isNightCafe(s.cafe)]
+    ['night', 'Night', (s) => isNightCafe(s.cafe)],
+    ['train', 'ใกล้รถไฟฟ้า', (s) => CM.thai.nearTransit(s.cafe)],
+    ['moto', 'จอดมอไซค์', (s) => ST.facilityOn(s.cafe, 'moto')],
+    ['air', 'ฟอกอากาศ', (s) => E.hasAir(s.cafe)],
+    ['local', 'ท้องถิ่น', (s) => !!s.cafe.local]
   ];
 
   function vMap() {
@@ -433,7 +466,7 @@
       showMe(l, p.coords.accuracy);
       map.setView([l.lat, l.lon], Math.max(map.getZoom(), 15), { animate: false });
       btn.classList.add('on');
-      toast(E.distKm(l, D.DEMO_CENTER) > 40 ? 'พบตำแหน่งแล้ว แต่คาเฟ่ในแอปตอนนี้อยู่ในกรุงเทพฯ' : 'พบตำแหน่งของคุณแล้ว (±' + Math.round(p.coords.accuracy) + ' ม.)');
+      toast(!nearAnyCafe(l) ? 'พบตำแหน่งแล้ว แต่ยังไม่มีคาเฟ่ในแอปใกล้คุณ' : 'พบตำแหน่งของคุณแล้ว (±' + Math.round(p.coords.accuracy) + ' ม.)');
     } catch (e) {
       toast(e && e.code === 1 ? 'ยังไม่ได้อนุญาตตำแหน่ง — เปิดสิทธิ์ตำแหน่งของเบราว์เซอร์ในการตั้งค่า แล้วกดใหม่'
         : e && e.code === 3 ? 'หาตำแหน่งนานเกินไป — ลองออกที่โล่งแล้วกดใหม่'
@@ -461,7 +494,8 @@
     });
     $('#mapCount').textContent = all.length ? 'แสดง ' + shown.length + ' จาก ' + all.length + ' ร้าน · เลขบนหมุด = Match วันนี้' : 'ยังไม่มีคาเฟ่ในระบบ';
     $('#mapCard').innerHTML = shown.length || !all.length ? '' : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ลองปิดตัวกรองบางอัน</p></div>';
-    if (fit && shown.length) map.fitBounds(L.latLngBounds(shown.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
+    const near = shown.filter((s) => E.distKm(center(), s.cafe) < 40), fitSet = geo.prov || geo.area || mapFilters.has('local') || !near.length ? shown : near;   // v23: Bangkok first, so the far-away local cafés don't zoom the map out to the whole country
+    if (fit && shown.length) map.fitBounds(L.latLngBounds(fitSet.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
   }
 
   function vResults() {
@@ -503,7 +537,7 @@
 
   function vCafe(id) {
     const c = D.CAFE_BY_ID[id];
-    if (!c) { location.replace('#/home'); return null; }
+    if (!c) return CM.ux.notFound('ร้านนี้');
     const ses = session();
     const s = E.scoreCafe(c, ses);
     const visits = vis().filter((v) => v.cafeId === id);
@@ -528,13 +562,15 @@
       '<p class="meta">' + I('star', 14, 'ic-fill gold') + c.rating.toFixed(1) + ' (' + c.reviews.toLocaleString('th-TH') + ' รีวิว)</p></div>' + ring(s.match, 64) + '</div>' +
       '<div class="badges">' + badges(s) + (visits.length ? '<span class="badge ok">' + I('stamp', 13) + 'เคยมา ' + visits.length + ' ครั้ง</span>' : '') + '</div>' +
       '<p class="tagline">“' + esc(c.tagline) + '”</p>' + ST.liveBanner(c) +
-      '<h2 class="sec-title">ทำไมถึงเหมาะกับวันนี้</h2><ul class="reasons card">' + reasons + '</ul>' +
+      '<h2 class="sec-title">ทำไมถึงเหมาะกับวันนี้</h2><ul class="reasons card">' + reasons + '</ul>' + (visits.length ? '' : CM.thai.firstPickHtml(c)) +
       ST.pickCard(c) + ST.questCard(c, visits.some((v) => v.questDone === c.id + ':q')) + ST.passportCard(c, visits) + ST.rewardCard(c, visits.length) +
       (cafeEvents.length ? '<h2 class="sec-title">' + I('star', 20) + 'Events ของร้าน</h2>' + cafeEvents.map(eventCard).join('') : '') +
+      CM.thai.gettingThere(c) + CM.thai.popularHtml(c) +
       '<h2 class="sec-title">' + I('coffee', 20) + 'Coffee & Drinks</h2><ul class="drinks card">' + drinks + '</ul>' +
       '<h2 class="sec-title">' + I('sparkles', 20) + 'Café DNA</h2>' + ST.dnaHtml(c) +
       '<h2 class="sec-title">' + I('camera', 20) + 'Best Photo Spots</h2><ul class="spots">' + spots + '</ul>' +
       '<h2 class="sec-title">' + I('info', 20) + 'Facilities</h2>' + ST.facilitiesHtml(c) +
+      CM.plus.noteBlock(c) +
       '<h2 class="sec-title">' + I('lock', 20) + 'ความลับของร้าน</h2>' +
       '<div class="card secret" id="secretBox"><p class="muted">ร้านนี้มีเรื่องที่คนไม่ค่อยรู้</p><button class="btn ghost" data-act="reveal-secret" data-id="' + c.id + '">' + I('eye', 18) + 'เปิดดูความลับ</button></div>' +
       (h.eligible ? '<h2 class="sec-title">' + I('gem', 20) + 'Hidden Score</h2><div class="card hidden-card">' + ring(h.score, 64, 'gemring') + '<p>' + esc(h.why) + '</p></div>' : '') +
@@ -609,7 +645,7 @@
     return '<a class="event-card" href="#/event/' + ev.id + '"><div class="ec-cover">' + evImage(ev, c) + '<span class="evbadge ev-' + s[1] + '">' + s[0] + '</span></div>' +
       '<div class="ec-body"><small class="kicker">' + esc(ST.typeLabel(ev.type)) + ' · ' + esc(c.name) + (ST.isVerified(c) ? ' ' + I('badge-check', 13) : '') + '</small>' +
       '<b>' + esc(ev.title) + '</b><span class="meta">' + I('clock', 13) + esc(evWhen(ev)) + '</span>' +
-      '<span class="ec-tags">' + (min.length ? '<span class="tag">เมนูเริ่ม ฿' + Math.min.apply(null, min) + '</span>' : '') + (ev.sets.length ? '<span class="tag">Set ' + ev.sets.length + '</span>' : '') + (ev.gives.length ? '<span class="tag">' + I('sparkles', 12) + ' Give away</span>' : '') + '</span></div></a>';
+      '<span class="ec-tags">' + (min.length ? '<span class="tag">เมนูเริ่ม ฿' + Math.min.apply(null, min) + '</span>' : '') + (ev.ticket ? '<span class="tag">' + I('ticket', 12) + ' ตั๋ว ' + (ev.ticket.price > 0 ? '฿' + ev.ticket.price : 'ฟรี') + '</span>' : '') + (ev.sets.length ? '<span class="tag">Set ' + ev.sets.length + '</span>' : '') + (ev.gives.length ? '<span class="tag">' + I('sparkles', 12) + ' Give away</span>' : '') + '</span></div></a>';
   }
 
   function eventsHomeHtml(ses) {
@@ -642,7 +678,7 @@
       '<h1 class="cafe-name">' + esc(ev.title) + '</h1>' +
       '<p class="meta">' + I('clock', 14) + esc(evWhen(ev)) + '</p>' +
       '<p class="meta"><a href="#/cafe/' + c.id + '">' + I('pin', 14) + esc(c.name) + '</a> · ' + esc(c.area) + ' · ' + fmtDist(c) + '</p>' +
-      (ev.desc ? '<p class="ev-desc">' + esc(ev.desc) + '</p>' : '') + items + sets + gives +
+      (ev.desc ? '<p class="ev-desc">' + esc(ev.desc) + '</p>' : '') + CM.thai.ticketCardHtml(ev) + items + sets + gives +
       '<p class="muted small">ข้อมูลอีเว้นท์มาจากร้านโดยตรง ราคาและเงื่อนไขอาจเปลี่ยนตามที่ร้านประกาศ</p><div class="spacer"></div></section>' +
       '<div class="cta-bar cta-2"><button class="btn ghost" data-act="nav-go" data-id="' + c.id + '">' + I('navigation', 18) + 'นำทาง</button>' +
       '<button class="btn ' + (saved ? 'ghost' : 'primary') + ' lg" data-act="ev-fav" data-id="' + ev.id + '" aria-pressed="' + saved + '">' + I(saved ? 'check' : 'star', 20) + (saved ? 'บันทึกแล้ว — เตือนฉัน' : 'สนใจ — เตือนฉัน') + '</button></div>' };
@@ -744,15 +780,18 @@
       '<h2 class="grp-t">เส้นทางของฉัน</h2><div class="card menu">' +
       mrow('stamp', 'Passport', 'สะสม stamp จากร้านที่ไปมา', stamps + ' ร้าน', 'href="#/passport"') +
       mrow('star', 'อีเว้นท์ที่บันทึกไว้', 'ดูอีเว้นท์ทั้งหมดของร้าน', (st.savedEvents || []).length + ' งาน', 'href="#/events"') +
+      mrow('ticket', 'ตั๋วของฉัน', 'ตั๋วอีเว้นท์ที่ซื้อด้วย PromptPay', (st.tickets || []).length + ' ใบ', 'href="#/tickets"') +
       mrow(a ? a.icon : 'sparkles', 'Café Personality', a ? esc(a.th) : 'ยังไม่ได้ทำ Quiz', a ? esc(a.name) : '', 'href="' + (a ? '#/persona' : '#/quiz/0') + '"') + '</div>' +
       '<details class="card fold pf"><summary>' + I('heart', 20) + 'รสนิยมของฉัน' + I('chevron-down', 18) + '</summary><ul class="prefs">' + prefs + '</ul></details>' +
-      '<h2 class="grp-t">Plus & Journal</h2>' + CM.plus.profileCard() + (CM.ent.visible('customer').length ? '<div class="card menu">' + CM.ent.profileRow(mrow) + '</div>' : '') + CM.plus.journalHtml() +
+      '<h2 class="grp-t">Plus & Journal</h2>' + CM.plus.profileCard() + CM.plus.toolsHtml(mrow) + (CM.ent.visible('customer').length ? '<div class="card menu">' + CM.ent.profileRow(mrow) + '</div>' : '') + CM.plus.journalHtml() +
       '<h2 class="grp-t">การเตือน</h2>' + CM.plus.remindersHtml() +
+      '<div class="card menu" data-new="3">' + mrow('message', 'แจ้งเตือนผ่าน LINE', 'เชื่อม LINE และเลือกหัวข้อที่อยากรับ', st.lineLink ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', 'href="#/line"') + '</div>' +
       '<h2 class="grp-t">การตั้งค่า</h2><div class="card menu">' +
       mrow('user', 'ข้อมูลส่วนตัว', 'ชื่อ อีเมล เบอร์โทร LINE', acctFilled() + '/4', 'href="#/account"') +
       mrow('message', 'ติดต่อเรา', 'อีเมล · LINE · ฝากช่องทางให้เราติดต่อกลับ', '', 'href="#/contact"') +
       '<div class="mrow static stack"><span class="mt"><b>ธีม</b><small>ตามเครื่องจะสลับสว่าง/มืดตามอุปกรณ์</small></span><div class="seg three" role="group" aria-label="ธีม">' +
       themeOpt.map((o) => '<button data-act="set-theme" data-t="' + o[0] + '" aria-pressed="' + (theme() === o[0]) + '" class="' + (theme() === o[0] ? 'on' : '') + '">' + (o[2] ? I(o[2], 18) : '') + o[1] + '</button>').join('') + '</div></div>' +
+      '<div class="mrow static"><span class="mt"><b>สั่นตอนเก็บ stamp</b><small>' + (CM.ux.canVibrate() ? 'สั่นเบา ๆ ตอนได้ stamp' : 'เครื่องนี้ยังไม่รองรับ — ใช้ได้ในแอปมือถือจริง') + '</small></span><button class="btn ghost sm' + (CM.ux.hapticOn() ? ' on' : '') + '" data-act="haptic-toggle" aria-pressed="' + CM.ux.hapticOn() + '">' + (CM.ux.hapticOn() ? 'เปิด' : 'ปิด') + '</button></div>' +
       mrow('cloud', 'สภาพอากาศ', esc(W.describe()), 'เปลี่ยน', 'data-act="open-weather"', 'button') +
       mrow('pin', 'พื้นที่', esc(loc), 'ใช้ตำแหน่งฉัน', 'data-act="use-gps"', 'button') +
       mrow('refresh', 'Quiz', 'ทำใหม่เมื่อรสนิยมเปลี่ยน', '', 'data-act="retake"', 'button') +
@@ -801,7 +840,7 @@
   const codeHist = () => (S.get().redeemLog || []).filter((x) => x.kind === 'promo' || x.kind === 'event' || x.kind === 'dev').slice().reverse();
   const dayTh = (d) => new Date(d + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
   function codeStatus(h) {
-    if (h.kind === 'event' || h.kind === 'dev') return !h.until ? 'ไม่มีวันหมดอายุ' : h.until >= ymd() ? 'ใช้ได้ถึง ' + dayTh(h.until) : 'หมดอายุแล้ว';
+    if (h.kind === 'event' || h.kind === 'dev' || h.kind === 'gift') return !h.until ? 'ไม่มีวันหมดอายุ' : h.until >= ymd() ? 'ใช้ได้ถึง ' + dayTh(h.until) : 'หมดอายุแล้ว';
     const sub = S.get().sub, left = sub.trialEnd > Date.now() && sub.plan === 'plus' ? Math.ceil((sub.trialEnd - Date.now()) / 864e5) : 0;
     return left ? 'กำลังใช้งาน · เหลือ ' + left + ' วัน' : 'สิ้นสุดแล้ว';
   }
@@ -824,7 +863,7 @@
     if (!h) return;
     const c = h.cafeId && D.CAFE_BY_ID[h.cafeId];
     openSheet('<h2 id="sheetTitle">' + esc(h.code) + '</h2><ul class="xp-lines">' +
-      xl('ประเภท', h.kind === 'event' ? 'โค้ดจากร้าน/อีเว้นท์' : h.kind === 'dev' ? 'โค้ดจากผู้พัฒนา' : 'โปรโมชัน') +
+      xl('ประเภท', h.kind === 'event' ? 'โค้ดจากร้าน/อีเว้นท์' : h.kind === 'dev' ? 'โค้ดจากผู้พัฒนา' : h.kind === 'gift' ? 'ของขวัญ Plus' : 'โปรโมชัน') +
       (h.kind !== 'promo' ? xl('ที่มา', esc(h.title)) + (c ? xl('ร้าน', esc(c.name)) : '') : '') +
       xl('สิ่งที่ได้', esc(h.kind === 'promo' ? 'ทดลอง Plus ฟรี 7 วัน' : h.gives)) + xl('สถานะ', codeStatus(h)) + xl('เก็บไว้เมื่อ', dTh(h.ts)) + '</ul>' +
       (h.kind !== 'promo' && c ? '<p class="muted small">แสดงหน้านี้ให้พนักงานที่ร้านดูเพื่อรับสิทธิ์ — ต้นแบบนี้ยังไม่มีระบบตัดสิทธิ์จริง</p>' : '') +
@@ -842,6 +881,7 @@
       fld('acEmail', 'อีเมล', a.email, 'type="email" inputmode="email" autocomplete="email" maxlength="60" placeholder="name@example.com"') +
       fld('acPhone', 'เบอร์โทร', a.phone, 'type="tel" inputmode="tel" autocomplete="tel" maxlength="16" placeholder="08x-xxx-xxxx"') +
       fld('acLine', 'LINE ID', a.line, 'type="text" autocapitalize="none" autocomplete="off" maxlength="21" placeholder="@yourid"') +
+      '<a class="btn ghost block" href="#/line">' + I('message', 18) + (st.lineLink ? 'จัดการการเชื่อม LINE' : 'เชื่อม LINE เพื่อรับแจ้งเตือน') + '</a>' +
       '<p id="acMsg" class="muted small" role="status">ไม่บังคับกรอก — ใส่เท่าที่สะดวก</p><button class="btn primary lg" data-act="save-account">บันทึก</button></div>' +
       '<div class="card menu">' + mrow('sparkles', 'Café Personality', pr ? esc(pr.name) : 'ยังไม่ได้ทำ Quiz', '', 'href="' + (pr ? '#/persona' : '#/quiz/0') + '"') +
       mrow('stamp', 'Passport', 'ร้านที่เคยไป', new Set(S.live().map((v) => v.cafeId)).size + ' ร้าน', 'href="#/passport"') +
@@ -870,7 +910,7 @@
 
   /* ---------- nav / router ---------- */
   const TABS = [['home', 'home', 'Home'], ['discover', 'compass', 'Discover'], ['map', 'map', 'Map'], ['passport', 'stamp', 'Passport'], ['profile', 'user', 'Profile']];
-  const TAB_OF = { login: 'profile', signup: 'profile', store: 'profile', dev: 'profile', favorites: 'profile', code: 'profile', account: 'profile', contact: 'profile', results: 'home', hidden: 'discover', lens: 'discover', drink: 'discover', events: 'discover', event: 'discover' };
+  const TAB_OF = { login: 'profile', signup: 'profile', store: 'profile', dev: 'profile', favorites: 'profile', code: 'profile', account: 'profile', contact: 'profile', results: 'home', hidden: 'discover', lens: 'discover', drink: 'discover', events: 'discover', event: 'discover', fest: 'discover', new: 'profile', tickets: 'profile', line: 'profile', plus: 'profile', wrapped: 'passport', gift: 'profile', notes: 'profile', smart: 'profile', trip: 'profile', export: 'passport', wshare: 'passport' };
   function navHtml(route) {
     const cur = TAB_OF[route] || route;
     return TABS.map((t) => '<a class="tab" href="#/' + t[0] + '"' + (cur === t[0] ? ' aria-current="page"' : '') + '>' + I(t[1], 24) + '<span>' + t[2] + '</span></a>').join('');
@@ -895,12 +935,19 @@
   function render(keepScroll) {
     const r = parseRoute(), st = S.get();
     if (!CM.auth.current() && !PUBLIC.includes(r.name)) { location.replace('#/welcome'); return; }   // sign in / sign up first
-    if (!st.profile && !st.skipped && !['welcome', 'quiz', 'persona', 'login', 'signup', 'studio', 'dev'].includes(r.name)) { location.replace('#/welcome'); return; }
+    if (!st.profile && !st.skipped && !['welcome', 'intro', 'quiz', 'persona', 'login', 'signup', 'studio', 'dev'].includes(r.name)) { location.replace('#/welcome'); return; }
     if (map) { map.stop(); map.remove(); map = null; mapMarkers = []; }
     let v;
-    if (!D.CAFES.length && NEEDS_CAFES.includes(r.name)) { v = vEmpty(); r.name = 'home'; r.empty = true; }
-    else switch (r.name) {
+    if (!skelDone && CM.ux.wantSkeleton(r.name)) {   // test switch "โหลดช้า" (and the first weather lookup, see boot)
+      const sk = CM.ux.skeleton(); view.innerHTML = sk.html; nav.hidden = !sk.nav; document.body.classList.toggle('has-nav', sk.nav); nav.innerHTML = navHtml(r.name);
+      clearTimeout(render.sk); render.sk = setTimeout(() => { skelDone = true; render(keepScroll); skelDone = false; }, 1400); return;
+    }
+    const bad = CM.ux.guard(r.name);
+    if (bad) v = bad;
+    else if (!D.CAFES.length && NEEDS_CAFES.includes(r.name)) { v = vEmpty(); r.name = 'home'; r.empty = true; }
+    else try { switch (r.name) {
       case 'welcome': v = vWelcome(); break;
+      case 'intro': v = CM.ux.introView(r.arg); break;
       case 'quiz': v = vQuiz(r.arg); break;
       case 'persona': v = vPersona(); break;
       case 'favorites': v = vFavorites(); break;
@@ -921,12 +968,13 @@
       case 'dev': v = CM.dev.view(r.arg); break;
       case 'store': v = vStore(); break;
       case 'login': case 'signup': v = vAuth(r.name); break;
-      case 'plus': case 'wrapped': v = CM.plus.view(r.name); break;
+      case 'plus': case 'wrapped': case 'gift': case 'notes': case 'smart': case 'trip': case 'export': case 'wshare': v = CM.plus.view(r.name, r.arg); break;
+      case 'new': case 'tickets': case 'line': case 'fest': v = CM.thai.view(r.name, r.arg); break;
       case 'events': v = vEvents(); break;
       case 'event': v = vEvent(r.arg); break;
       case 'me': location.replace('#/profile'); return;
       default: v = vHome();
-    }
+    } } catch (err) { console.error(err); v = CM.ux.errorView(); }
     if (!v) return;
     view.classList.toggle('still', !!keepScroll);
     view.innerHTML = v.html;
@@ -936,14 +984,21 @@
     document.body.dataset.route = r.name;
     applyAmbient();
     if (!keepScroll) window.scrollTo(0, 0);
-    if (v.mount) v.mount(keepScroll);
+    try { if (v.mount) v.mount(keepScroll); CM.thai.afterRender(); } catch (err) { console.error(err); }
+    if (!keepScroll) {   // new page: tell the tab title and screen readers where we are
+      const h1 = $('h1', view), t = h1 ? h1.textContent.replace(/\s+/g, ' ').trim() : '';
+      document.title = (t ? t + ' · ' : '') + 'Café Mood'; if (t) CM.ux.say('หน้า ' + t);
+    }
+    CM.ux.coach(r.name);
   }
+  let skelDone = false;
 
   window.addEventListener('hashchange', () => {
     const h = location.hash;
     if (h !== stack[stack.length - 1]) {
       if (stack.length > 1 && stack[stack.length - 2] === h) stack.pop(); else stack.push(h);
     }
+    sheetEntry = false;   // a leftover entry is skipped by the popstate handler
     if (sheetOpen) closeSheet(true);
     trackView();
     render();
@@ -956,22 +1011,34 @@
   W.onChange((c) => {
     ST.apply(c.hour);
     applyAmbient();
-    const sig = [c.kind, c.night, c.temp, c.source].join('|');
+    const sig = [c.kind, c.night, c.temp, c.pm, c.source].join('|');
     if (sig === weatherSig) return;
     const first = !weatherSig;
     weatherSig = sig;
     if (first) return;   // the boot render already used this context
     const n = parseRoute().name;
-    if (sheetOpen || n === 'quiz' || n === 'welcome' || n === 'persona') return;
+    if (sheetOpen || n === 'quiz' || n === 'welcome' || n === 'persona' || n === 'intro') return;
     render(true);
+    CM.ux.say('อากาศเปลี่ยนเป็น ' + c.label + ' อัปเดตคำแนะนำแล้ว');
   });
 
   /* ---------- sheets ---------- */
+  // v28: a sheet owns one history entry, so the phone's Back button closes the sheet instead of leaving the page.
+  // Closing by any other way pops that entry again (deferred a tick, so "close, then open the next sheet" reuses it).
+  let sheetEntry = false, ignorePop = false, lastSel = '';
+  const selOf = (el) => {   // how to find the opener again after render() replaced it
+    if (!el || !el.getAttribute) return '';
+    if (el.id) return '#' + el.id;
+    const a = el.getAttribute('data-act'); if (!a) return '';
+    return '[data-act="' + a + '"]' + ['data-id', 'data-k', 'data-to'].map((k) => (el.getAttribute(k) ? '[' + k + '="' + el.getAttribute(k) + '"]' : '')).join('');
+  };
   function openSheet(html) {
-    lastFocus = document.activeElement;
+    if (!sheetOpen) { lastFocus = document.activeElement; lastSel = selOf(lastFocus); }
     sheetRoot.innerHTML = '<div class="sheet-backdrop" data-act="close-sheet"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" tabindex="-1"><div class="grab" aria-hidden="true"></div>' + html + '</div>';
     sheetOpen = true;
     document.body.classList.add('sheet-open');
+    $('#app').inert = true;   // keyboard / screen-reader focus cannot wander behind the sheet
+    if (!sheetEntry) { try { history.pushState({ cmSheet: 1 }, ''); sheetEntry = true; } catch (e) { /* sandboxed: Back just leaves the page */ } }
     const sh = $('.sheet', sheetRoot);
     const first = $('button', sh);
     (first || sh).focus({ preventScroll: true });
@@ -981,8 +1048,18 @@
     sheetRoot.innerHTML = '';
     sheetOpen = false;
     document.body.classList.remove('sheet-open');
-    if (!silent && lastFocus && lastFocus.focus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true });
+    $('#app').inert = false;
+    setTimeout(() => { if (!sheetOpen && sheetEntry) { sheetEntry = false; ignorePop = true; history.back(); } }, 0);
+    if (!silent) setTimeout(() => {   // after the caller's render(): the old opener may be a new element now
+      const t = (lastFocus && document.contains(lastFocus) && lastFocus) || (lastSel && $(lastSel)) || view;
+      if (t && t.focus) t.focus({ preventScroll: true });
+    }, 30);
   }
+  window.addEventListener('popstate', () => {
+    if (ignorePop) { ignorePop = false; return; }
+    if (sheetOpen) { sheetEntry = false; closeSheet(); render(true); return; }   // Back = close the sheet
+    if (history.state && history.state.cmSheet) history.back();   // stepped onto a leftover sheet entry: skip it
+  });
 
   document.addEventListener('keydown', (e) => {
     if (!sheetOpen) return;
@@ -998,11 +1075,11 @@
 
   function sheetWeather() {
     const cur = S.get().weatherOverride;
-    const sims = [['sunny', 'sun', 'แดดดี'], ['cloudy', 'cloud', 'ครึ้มฟ้า'], ['rain', 'cloud-rain', 'ฝนตก'], ['hot', 'thermometer', 'ร้อนจัด'], ['night', 'moon', 'กลางคืน']];
+    const sims = [['sunny', 'sun', 'แดดดี'], ['cloudy', 'cloud', 'ครึ้มฟ้า'], ['rain', 'cloud-rain', 'ฝนตก'], ['hot', 'thermometer', 'ร้อนจัด'], ['night', 'moon', 'กลางคืน'], ['haze', 'air', 'ฝุ่น PM2.5']];
     openSheet('<h2 id="sheetTitle">สภาพอากาศ</h2><p class="muted">ตอนนี้: <b>' + esc(W.describe()) + '</b><br>อากาศเป็น context ที่ระบบนำไปคิดเอง — ที่นี่เพื่อทดลองดูว่าคำแนะนำเปลี่ยนยังไง</p>' +
       '<div class="sim-grid">' + sims.map((s) => '<button class="sim' + (cur === s[0] ? ' on' : '') + '" data-act="set-weather" data-k="' + s[0] + '" aria-pressed="' + (cur === s[0]) + '">' + I(s[1], 24) + '<span>' + s[2] + '</span></button>').join('') + '</div>' +
       '<button class="btn ghost block" data-act="set-weather" data-k="auto">' + I('refresh', 18) + 'ใช้อากาศจริง (อัตโนมัติ)</button>' +
-      '<button class="btn ghost block" data-act="use-gps">' + I('navigation', 18) + 'ใช้ตำแหน่งของฉัน</button>' +
+      '<button class="btn ghost block" data-act="use-gps">' + I('navigation', 18) + 'ใช้ตำแหน่งของฉัน</button>' + CM.ux.lab() +
       '<button class="btn text block" data-act="close-sheet">ปิด</button>');
   }
 
@@ -1047,8 +1124,8 @@
     go: (el) => go(el.dataset.to),
     back: (el) => { if (stack.length > 1) history.back(); else go(el.dataset.fallback || '#/home'); },
 
-    'start-quiz': () => { S.patch({ quizDraft: {}, skipped: false }); go('#/quiz/0'); },
-    'skip-quiz': () => { S.patch({ skipped: true }); go('#/home'); },
+    'start-quiz': () => { S.patch({ quizDraft: {}, skipped: false }); go(S.get().seenIntro ? '#/quiz/0' : '#/intro/0'); },
+    'skip-quiz': () => { S.patch({ skipped: true, seenIntro: true }); go('#/home'); },
     'quiz-prev': () => { const n = parseInt(parseRoute().arg, 10); go('#/quiz/' + Math.max(0, n - 1)); },
     'quiz-pick': (el) => {
       if (quizLock) return;
@@ -1066,6 +1143,10 @@
     },
     retake: () => { S.patch({ quizDraft: {}, skipped: false }); go('#/quiz/0'); },
 
+    'other-mood': () => {
+      const d = document.querySelector('details.tell'), t = document.getElementById('moodText'); if (!d || !t) return;
+      d.open = true; setTimeout(() => { t.focus({ preventScroll: true }); d.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+    },
     'toggle-mood': (el) => {
       const id = el.dataset.id, i = draftMoods.indexOf(id);
       if (i >= 0) draftMoods.splice(i, 1);
@@ -1146,6 +1227,13 @@
       if ((st.redeemed || []).includes(c)) { say('โค้ดนี้เก็บไว้แล้วในเครื่องนี้', true); return; }
       const hit = ST.lookupCode(c);
       entry.code = c;
+      const gift = CM.plus.redeemGift(c);
+      if (gift) {
+        if (gift.err) { say(gift.err, true); return; }
+        Object.assign(entry, { kind: 'gift', title: 'Gift Plus', gives: gift.msg, until: until(gift.until) });
+        S.patch({ redeemed: (st.redeemed || []).concat(c), redeemLog: (st.redeemLog || []).concat(entry) });
+        toast(gift.msg); render(true); return;
+      }
       if (PROMOS[c] === 'plus7') {
         if (CM.plus.isPlus()) { say('คุณเป็นสมาชิก Plus อยู่แล้ว — เก็บโค้ดไว้ใช้ภายหลังได้', true); return; }
         const sub = st.sub; sub.plan = 'plus'; sub.period = 'month'; sub.startedAt = Date.now(); sub.trialEnd = Date.now() + 7 * 864e5; sub.cancelled = false; sub.endsAt = 0;
@@ -1202,10 +1290,10 @@
     'area-expand': (el) => { const o = el.getAttribute('aria-expanded') !== 'true'; el.setAttribute('aria-expanded', o); el.closest('li').querySelector('.dists').hidden = !o; },
     'filter-clear': () => { $$('.sheet input[type=checkbox]').forEach((i) => { i.checked = false; }); fCount(); },
     'filter-apply': () => {
-      filt.areas = new Set($$('.sheet [data-d]:checked').map((i) => i.value)); filt.near = $('#nearMe').checked; filt.events = $('#evOnly').checked;
-      closeSheet(); render(true);
+      filt.areas = new Set($$('.sheet [data-d]:checked').map((i) => i.value)); filt.near = $('#nearMe').checked; filt.events = $('#evOnly').checked; filt.tags = new Set($$('.sheet [data-t]:checked').map((i) => i.value));
+      closeSheet(); render(true); announceStatus();
     },
-    'filter-remove': (el) => { el.dataset.k === '@near' ? (filt.near = false) : el.dataset.k === '@ev' ? (filt.events = false) : filt.areas.delete(el.dataset.k); render(true); },
+    'filter-remove': (el) => { const k = el.dataset.k; k === '@near' ? (filt.near = false) : k === '@ev' ? (filt.events = false) : k[0] === '#' ? filt.tags.delete(k.slice(1)) : filt.areas.delete(k); render(true); announceStatus(); },
     'set-weather': (el) => {
       const k = el.dataset.k;
       drinkIdx = 0;
@@ -1244,7 +1332,7 @@
       }
       const rw0 = ST.rewardFor(cafe0), nv = vis().filter((v) => v.cafeId === ci.cafeId).length + 1;
       if (rw0 && nv === rw0.need) r.rewardText = rw0.text;
-      S.addVisit(r.visit);
+      S.addVisit(r.visit); CM.thai.logCheckin(ci.cafeId);
       r.pass = ST.passStatus(cafe0, vis().filter((v) => v.cafeId === ci.cafeId)); ST.passAward(cafe0, vis().filter((v) => v.cafeId === ci.cafeId));
       ST.track(ci.cafeId, 'checkins');
       const unlocked = E.achievementProgress(vis()).filter((a) => a.done && !before.includes(a.id));
@@ -1253,6 +1341,7 @@
       closeSheet(true);
       sheetStampResult(r, c, unlocked, lvBefore, lvAfter);
       render(true);
+      CM.ux.haptic('stamp'); CM.ux.say('เก็บ stamp แล้ว ได้ ' + r.xp + ' XP');
     },
 
     'shuffle-drink': () => { drinkIdx++; render(true); },
@@ -1270,12 +1359,14 @@
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;
-    const fn = H[el.dataset.act];
-    if (fn) { if (el.tagName === 'A') e.preventDefault(); fn(el, e); }
+    let act = el.dataset.act;
+    if (CM.ux.SKIP_CONFIRM[act]) act = CM.ux.SKIP_CONFIRM[act];   // no "are you sure?" sheet: do it, offer undo
+    const fn = H[act];
+    if (fn) { if (el.tagName === 'A') e.preventDefault(); CM.ux.UNDO[act] ? CM.ux.undoable(act, () => fn(el, e)) : fn(el, e); }
   });
   document.addEventListener('change', (e) => {
     if (!e.target.closest('.sheet .arow')) return;
-    if (e.target.dataset.p !== undefined) $$('.sheet [data-d]').forEach((i) => { i.checked = e.target.checked; }); else syncProv();
+    if (e.target.dataset.p !== undefined) $$('[data-d]', e.target.closest('li')).forEach((i) => { i.checked = e.target.checked; }); else syncProv();
     fCount();
   });
   document.addEventListener('change', (e) => {
@@ -1295,6 +1386,7 @@
     if (e.target.id === 'cafeSearch') {
       searchQ = e.target.value;
       $('#searchOut').innerHTML = searchHtml(searchQ);
+      const st = $('#searchOut [role=status]'); if (st) CM.ux.sayLater(st.textContent);
     }
     if (e.target.id === 'areaSearch') {
       const q = e.target.value.trim().toLowerCase();
@@ -1305,15 +1397,20 @@
 
   /* ---------- boot ---------- */
   ST.install({ H, toast, openSheet, closeSheet, render });
+  CM.thai.install({ H, toast, openSheet, closeSheet, render, go, session, rowCard, eventCard, evWhen, subHead, say: (t) => { draftText = t; } });
   CM.plus.install({ H, toast, openSheet, closeSheet, render, backBtn });
   CM.dev.install({ H, toast, openSheet, closeSheet, render, backBtn });
   CM.ent.install({ H, toast, openSheet, closeSheet, render, backBtn });
+  CM.ux.install({ H, toast, openSheet, closeSheet, render, go });
   ST.apply(W.ctx.hour);
   if (!location.hash) location.replace('#/home');
   stack.push(location.hash);
   trackView();
   applyAmbient();
   applyTheme(theme(), true);
-  render();
-  W.refresh();
+  // first visit with no cached weather: show a skeleton while the real lookup runs (at most 1.4 s), instead of flashing a guess
+  if (W.ctx.source === 'time' && !CM.ux.offline() && CM.auth.current() && ['home', 'results', 'discover'].includes(parseRoute().name)) {
+    CM.ux.sim.boot = true; render();
+    Promise.race([W.refresh(), new Promise((r) => setTimeout(r, 1400))]).then(() => { CM.ux.sim.boot = false; clearTimeout(render.sk); render(); });
+  } else { render(); W.refresh(); }
 })();

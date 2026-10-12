@@ -40,13 +40,13 @@
 
   // Free-text understanding (stand-in for an LLM — same output shape: moods / boosts / hints).
   const KEYWORDS = [
-    { label: 'ผ่อนคลาย', k: ['ผ่อนคลาย', 'พักผ่อน', 'ชิล', 'สบาย', 'สงบ', 'chill', 'relax', 'slow'], moods: ['relax'] },
+    { label: 'ผ่อนคลาย', k: ['ผ่อนคลาย', 'พักผ่อน', 'ชิล', 'ชิว', 'สบาย', 'สงบ', 'นั่งเล่น', 'เรื่อยเปื่อย', 'พักใจ', 'chill', 'relax', 'slow'], moods: ['relax'] },
     { label: 'โฟกัส / อ่านหนังสือ', k: ['อ่านหนังสือ', 'ทำงาน', 'ติว', 'โฟกัส', 'สอบ', 'รายงาน', 'โปรเจกต์', 'โปรเจค', 'เขียนโค้ด', 'โน้ตบุ๊ก', 'work', 'study', 'read', 'focus', 'code', 'laptop'], moods: ['focus'] },
     { label: 'ปลุกไอเดีย', k: ['ไอเดีย', 'วาด', 'ออกแบบ', 'สร้างสรรค์', 'แรงบันดาลใจ', 'creative', 'sketch', 'design', 'draw'], moods: ['creative'] },
     { label: 'ไปคนเดียว', k: ['คนเดียว', 'เดี่ยว', 'ส่วนตัว', 'solo', 'alone'], moods: ['alone'] },
     { label: 'เจอเพื่อน / คนสำคัญ', k: ['เพื่อน', 'แฟน', 'นัด', 'เจอ', 'คุยกัน', 'กลุ่ม', 'เดต', 'friends', 'date', 'group'], moods: ['social'] },
     { label: 'อบอุ่น', k: ['อบอุ่น', 'หนาว', 'โซฟา', 'ขี้เกียจ', 'อุ่น ๆ', 'อุ่นๆ', 'cozy'], moods: ['cozy'] },
-    { label: 'ถ่ายรูป', k: ['ถ่ายรูป', 'ถ่ายภาพ', 'ฟิล์ม', 'ไอจี', 'ถ่ายคลิป', 'มุมสวย', 'ลงรูป', 'instagram', 'photo'], moods: ['photo'] },
+    { label: 'ถ่ายรูป', k: ['ถ่ายรูป', 'ถ่ายภาพ', 'ฟิล์ม', 'ไอจี', 'ถ่ายคลิป', 'มุมสวย', 'ลงรูป', 'จึ้ง', 'ลงสตอรี่', 'เซลฟี่', 'instagram', 'photo'], moods: ['photo'] },
     { label: 'ตามหากาแฟ', k: ['กาแฟ', 'เอสเปรสโซ', 'ลาเต้', 'บาริสต้า', 'เมล็ด', 'สเปเชียลตี้', 'coffee', 'espresso', 'latte', 'specialty', 'single origin'], moods: ['coffee'] },
     { label: 'ร้านเงียบ', k: ['เงียบ', 'ไม่วุ่นวาย', 'quiet', 'peaceful'], boosts: { quiet: .7, crowd: -.5 } },
     { label: 'ธรรมชาติ', k: ['ต้นไม้', 'สวน', 'ธรรมชาติ', 'สีเขียว', 'nature', 'garden', 'plants'], boosts: { nature: .8 } },
@@ -54,7 +54,19 @@
     { label: 'ยามค่ำ', k: ['ดึก', 'กลางคืน', 'มืด ๆ', 'มืดๆ', 'night', 'late'], boosts: { dark: .7 }, night: true },
     { label: 'บรรยากาศดี', k: ['บรรยากาศดี', 'บรรยากาศ', 'vibe', 'อินดี้'], boosts: { cozy: .4 } },
     { label: 'ร้านลับ', k: ['ร้านลับ', 'ลับ ๆ', 'ลับๆ', 'ไม่มีใครรู้', 'hidden', 'ร้านเล็ก'], hidden: true, boosts: { small: .4 } },
-    { label: 'มัทฉะ', k: ['มัทฉะ', 'ชาเขียว', 'matcha'], drink: 'matcha' }
+    { label: 'มัทฉะ', k: ['มัทฉะ', 'ชาเขียว', 'matcha'], drink: 'matcha' },
+    // Thai slang / regional words (v23). Add words here first — an LLM is only needed once this list stops being enough.
+    { label: 'นั่งยาว', k: ['นั่งยาว', 'นั่งนาน', 'นั่งได้ทั้งวัน', 'นั่งทั้งวัน', 'ปักหลัก'], boosts: { work: .5, cozy: .4, quiet: .3, crowd: -.3 } },
+    { label: 'ฟีลมินิมอล/ญี่ปุ่น', k: ['ฟีลญี่ปุ่น', 'ฟีลเกาหลี', 'ฟีลมินิมอล', 'มินิมอล', 'ญี่ปุ่น', 'เกาหลี'], boosts: { bright: .5, small: .3, photo: .3 } },
+    { label: 'ฟีลบ้านสวน/ดอย', k: ['ฟีลบ้านสวน', 'ฟีลต่างจังหวัด', 'ฟีลบ้านนอก', 'ฟีลภูเขา', 'ฟีลดอย', 'บ้านสวน'], boosts: { nature: .7, cozy: .3 }, local: true },
+    { label: 'ฟีลดี', k: ['ฟีล', 'มู้ด', 'มูด', 'feel'], boosts: { cozy: .4 } },
+    { label: 'แอ่ว (เหนือ)', k: ['แอ่ว', 'ม่วน', 'ฮิมปิง', 'ฮิมน้ำ', 'ผ่อ'], moods: ['social'], local: true },
+    { label: 'หรอย / โกปี๊ (ใต้)', k: ['หรอย', 'โกปี๊', 'โกปี้', 'กาแฟโบราณ', 'ชาชัก'], moods: ['coffee'], local: true },
+    { label: 'ร้านท้องถิ่น', k: ['ร้านท้องถิ่น', 'ร้านพื้นถิ่น', 'พื้นถิ่น', 'ท้องถิ่น', 'กาแฟดอย', 'ตลาดนัด', 'คาเฟ่ตลาด', 'โลคอล'], local: true },
+    { label: 'หนีฝุ่น', k: ['ฝุ่น', 'pm2.5', 'pm 2.5', 'หนีฝุ่น', 'เครื่องฟอก', 'หายใจ'], boosts: { outdoor: -.8, window: .1 }, indoor: true, air: true },
+    { label: 'หลบร้อน', k: ['หลบร้อน', 'ร้อนมาก', 'ร้อนตับแตก', 'ร้อนจัด', 'แอร์เย็น'], boosts: { outdoor: -.6 }, indoor: true },
+    { label: 'หลบฝน', k: ['หลบฝน', 'ฝนตก', 'ฟังเสียงฝน', 'ฝนมา'], boosts: { window: .5, cozy: .4, outdoor: -.5 }, indoor: true },
+    { label: 'มือใหม่', k: ['มือใหม่', 'ครั้งแรก', 'ไม่เคยมา', 'ไม่รู้จะสั่งอะไร', 'ไม่ค่อยดื่มกาแฟ', 'ไม่กินกาแฟ', 'ไม่ขม'], first: true, boosts: { cozy: .2 } }
   ];
   const BOOST_ADJ = { quiet: 'Quiet', nature: 'Natural', bright: 'Bright', dark: 'Moody', cozy: 'Cozy', small: 'Intimate' };
   const WEATHER_ADJ = { rain: 'Cozy', sunny: 'Bright', cloudy: 'Calm', hot: 'Cool', night: 'Moody' };
@@ -412,7 +424,86 @@
         dr('Chrysanthemum Honey Tea', 'tea', 'hot', 100, 'ชาเก๊กฮวยน้ำผึ้ง อุ่น ๆ', ['#E6C85A', '#B58A2A'])],
       spots: [
         sp('โคมกระดาษแขวนเพดาน', '18:30–20:30', 2, 5, 'ถ่ายมองขึ้นให้เห็นโคมหลายดวง'),
-        sp('ชั้นลอยไม้สัก', '17:00–18:30', 3, 4, 'แสงอำพันสุดท้ายของวัน')] }
+        sp('ชั้นลอยไม้สัก', '17:00–18:30', 3, 4, 'แสงอำพันสุดท้ายของวัน')] },
+
+    // v23: local cafés outside Bangkok (fictional demo data, like the rest). local = true feeds the "ร้านท้องถิ่น" filter.
+    { id: 'doi-pang-roast', name: 'Doi Pang Roast', area: 'นิมมาน', district: 'เมืองเชียงใหม่', province: 'เชียงใหม่', local: true, region: 'north', air: true, lat: 18.7992, lon: 98.9672, rating: 4.7, reviews: 164, repeat: .61, hours: [8, 18],
+      palette: ['#2F4A33', '#C99A5B'],
+      attr: { quiet: 6, cozy: 7, bright: 7, nature: 8, urban: 3, dark: 3, photo: 7, coffee: 10, social: 5, work: 6, creative: 6, outdoor: 5, window: 7, small: 5, crowd: 4 },
+      tagline: 'โรงคั่วกาแฟดอยกลางนิมมาน เมล็ดจากไร่ชาวเขาที่คั่วเองหลังร้าน',
+      secret: 'ถามหา “แก้วดอยลับ” — กาแฟล็อตเล็กจากไร่หมู่บ้านที่ร้านรับตรง มีวันละไม่กี่แก้ว',
+      drinks: [
+        dr('Doi Pang Filter', 'coffee', 'hot', 90, 'กาแฟกรองจากดอย หอมดอกไม้ เปรี้ยวนุ่ม', ['#6B4226', '#B98A5B']),
+        dr('Honey Process Latte', 'latte', 'iced', 110, 'ลาเต้เมล็ดโปรเซสน้ำผึ้ง หวานละมุน', ['#C98B4B', '#F3E6D2']),
+        dr('Mae Hong Son Tea Fizz', 'tea', 'iced', 95, 'ชาป่าซ่า ๆ เปรี้ยวหวานกำลังดี', ['#C9B26B', '#6F9A72'])],
+      spots: [
+        sp('ระเบียงมองดอยสุเทพ', '07:30–09:00', 4, 5, 'ถ่ายตอนหมอกบาง ๆ ให้ดอยเป็นฉากหลัง', true),
+        sp('ชั้นเมล็ดไม้เก่า', '10:00–12:00', 4, 4, 'แสงข้างจากหน้าต่างทำให้ถุงเมล็ดดูมีมิติ')] },
+
+    { id: 'khum-wiang-cafe', name: 'Khum Wiang Café', area: 'เวียงเก่า', district: 'เมืองเชียงใหม่', province: 'เชียงใหม่', local: true, region: 'north', lat: 18.7883, lon: 98.9931, rating: 4.6, reviews: 291, repeat: .52, hours: [9, 19],
+      palette: ['#5A3B22', '#E0B77A'],
+      attr: { quiet: 6, cozy: 9, bright: 6, nature: 6, urban: 4, dark: 4, photo: 8, coffee: 7, social: 7, work: 4, creative: 6, outdoor: 7, window: 6, small: 4, crowd: 6 },
+      tagline: 'คาเฟ่เรือนไม้ในเมืองเก่า ลานหน้าร้านเป็นตลาดนัดคาเฟ่เช้าวันเสาร์',
+      secret: 'เช้าวันเสาร์ถามหา “ขนมเมี่ยง” จากแม่ค้าตลาดนัดหน้าร้าน ร้านเตรียมที่นั่งไว้ให้',
+      drinks: [
+        dr('Lanna Latte', 'latte', 'hot', 100, 'ลาเต้น้ำอ้อยดอย หอมควันไม้', ['#B98A5B', '#F3E6D2']),
+        dr('Sticky Rice Cold Brew', 'coffee', 'iced', 105, 'โคลด์บรูว์ท็อปครีมข้าวเหนียวมูน', ['#2F1E14', '#E8DCC8']),
+        dr('Butterfly Pea Soda', 'signature', 'iced', 90, 'โซดาอัญชันไล่สีม่วง–ฟ้า', ['#7E6BB5', '#7FB3E0'])],
+      spots: [
+        sp('ลานไม้หน้าร้านวันตลาดนัด', '08:00–10:00', 4, 5, 'ถ่ายมุมสูงให้เห็นร่มและแผงตลาด', true),
+        sp('ประตูเรือนไม้สัก', '15:00–17:00', 4, 4, 'แสงบ่ายส่องผ่านบานประตูไม้')] },
+
+    { id: 'him-ping-coffee-dock', name: 'Him Ping Coffee Dock', area: 'ริมปิง', district: 'เมืองเชียงใหม่', province: 'เชียงใหม่', local: true, region: 'north', lat: 18.7950, lon: 99.0052, rating: 4.5, reviews: 138, repeat: .5, hours: [8, 21],
+      palette: ['#1F4A52', '#9CC7B8'],
+      attr: { quiet: 5, cozy: 6, bright: 8, nature: 7, urban: 2, dark: 3, photo: 9, coffee: 6, social: 8, work: 3, creative: 5, outdoor: 9, window: 4, small: 3, crowd: 5 },
+      tagline: 'ท่าน้ำริมปิง นั่งฮิมน้ำจิบกาแฟตอนพระอาทิตย์ตก',
+      secret: 'โต๊ะริมท่าเรือสุดทางเดินไม่ต้องจอง แต่ต้องมาก่อน 16:30',
+      drinks: [
+        dr('Ping River Iced Americano', 'coffee', 'iced', 75, 'อเมริกาโน่เย็นเข้มข้น เสิร์ฟพร้อมน้ำแข็งก้อนใหญ่', ['#2F1E14', '#9C6B3D']),
+        dr('Longan Honey Tea', 'tea', 'iced', 85, 'ชาน้ำผึ้งลำไย หอมหวานชื่นใจ', ['#E6C85A', '#B58A2A']),
+        dr('Sunset Coconut Latte', 'latte', 'iced', 105, 'ลาเต้มะพร้าวน้ำหอม ท็อปฟองนุ่ม', ['#E8DCC8', '#C98B4B'])],
+      spots: [
+        sp('ท่าเรือไม้ริมปิง', '17:30–18:30', 5, 5, 'ถ่ายย้อนแสงให้เห็นเงาคนนั่งริมน้ำ', true),
+        sp('แถวโคมไฟริมน้ำ', '18:30–20:00', 3, 5, 'ใช้โหมดกลางคืนจะได้โบเก้โคมสวย', true)] },
+
+    { id: 'kopi-ban-tai', name: 'Kopi Ban Tai', area: 'หาดใหญ่', district: 'หาดใหญ่', province: 'สงขลา', local: true, region: 'south', lat: 7.0090, lon: 100.4760, rating: 4.6, reviews: 412, repeat: .66, hours: [6, 15],
+      palette: ['#6B3A1F', '#E8C48A'],
+      attr: { quiet: 3, cozy: 6, bright: 6, nature: 2, urban: 7, dark: 2, photo: 6, coffee: 8, social: 8, work: 2, creative: 3, outdoor: 3, window: 5, small: 4, crowd: 7 },
+      tagline: 'ร้านโกปี๊สไตล์ปักษ์ใต้ ชงถุงผ้าแบบโบราณ กินคู่ติ่มซำและไข่ลวก',
+      secret: 'สั่ง “โกปี๊ดำน้ำตาลโตนด” — เมนูลับของคนแถวนี้ ไม่มีในเมนู',
+      drinks: [
+        dr('โกปี๊ร้อน (ถุงผ้า)', 'coffee', 'hot', 35, 'กาแฟโบราณชงถุงผ้า เข้มหอมแบบปักษ์ใต้', ['#4A2C1A', '#C98B4B']),
+        dr('ชาชักเย็น', 'tea', 'iced', 40, 'ชานมชักฟองนุ่ม หวานมัน', ['#C98B4B', '#F3E6D2']),
+        dr('ลาเต้น้ำตาลโตนด', 'latte', 'hot', 65, 'ลาเต้หอมหวานจากน้ำตาลโตนดเมืองสงขลา', ['#B98A5B', '#F3E6D2'])],
+      spots: [
+        sp('โต๊ะหินอ่อนหน้าร้าน', '07:00–09:00', 4, 4, 'ถ่ายแก้วโกปี๊ลายกระเบื้องบนโต๊ะหินอ่อน'),
+        sp('เคาน์เตอร์ถุงผ้า', '09:00–11:00', 3, 4, 'ถ่ายตอนเทกาแฟจากกาต้มโบราณ')] },
+
+    { id: 'trang-old-kopi', name: 'Trang Old Town Kopi', area: 'เมืองตรัง', district: 'เมืองตรัง', province: 'ตรัง', local: true, region: 'south', lat: 7.5590, lon: 99.6110, rating: 4.7, reviews: 233, repeat: .7, hours: [6, 16],
+      palette: ['#7A4A24', '#F0C98A'],
+      attr: { quiet: 4, cozy: 8, bright: 5, nature: 3, urban: 6, dark: 3, photo: 7, coffee: 8, social: 7, work: 2, creative: 4, outdoor: 3, window: 4, small: 5, crowd: 6 },
+      tagline: 'ร้านกาแฟเรือนห้องแถวเมืองตรัง กินคู่หมูย่างและขนมปังสังขยา',
+      secret: 'มาก่อน 07:00 เจ้าของร้านจะชงให้จากกาต้มทองเหลืองใบเก่าที่ใช้มาสามรุ่น',
+      drinks: [
+        dr('กาแฟโบราณตรัง', 'coffee', 'hot', 40, 'กาแฟชงโบราณ เข้ม หวานมัน', ['#4A2C1A', '#C98B4B']),
+        dr('ชาดำเย็น', 'tea', 'iced', 35, 'ชาดำเย็นแบบใต้ เข้มจัด', ['#8A5A32', '#4A2C1A']),
+        dr('ลาเต้เกลือหวาน', 'latte', 'iced', 70, 'ลาเต้ท็อปครีมเกลือหวาน', ['#E8DCC8', '#B98A5B'])],
+      spots: [
+        sp('ประตูห้องแถวสีฟ้าเก่า', '08:00–10:00', 4, 5, 'ถ่ายกับกระเบื้องลายโบราณหน้าร้าน'),
+        sp('โต๊ะกลมไม้ในร้าน', '09:00–11:00', 3, 4, 'ถ่ายท็อปแวบแก้วกาแฟโบราณ')] },
+
+    { id: 'thalang-road-roasters', name: 'Thalang Road Roasters', area: 'เมืองเก่าภูเก็ต', district: 'เมืองภูเก็ต', province: 'ภูเก็ต', local: true, region: 'south', air: true, lat: 7.8840, lon: 98.3870, rating: 4.6, reviews: 305, repeat: .55, hours: [8, 21],
+      palette: ['#C0638E', '#F0D2A8'],
+      attr: { quiet: 4, cozy: 7, bright: 7, nature: 2, urban: 7, dark: 3, photo: 9, coffee: 8, social: 8, work: 5, creative: 7, outdoor: 3, window: 6, small: 5, crowd: 6 },
+      tagline: 'ตึกแถวชิโน-โปรตุกีสในย่านเมืองเก่า คั่วกาแฟเองหน้าร้านทุกเช้า',
+      secret: 'คืนวันอาทิตย์ถนนหน้าร้านเป็นตลาดนัด ชั้นสองมีที่นั่งมองลงถนนที่ไม่ต้องรอคิว',
+      drinks: [
+        dr('Old Town Flat White', 'coffee', 'hot', 95, 'แฟลตไวท์เมล็ดภูเก็ตคั่วเอง', ['#6B4226', '#E8DCC8']),
+        dr('Pandan Coconut Latte', 'latte', 'iced', 110, 'ลาเต้ใบเตยมะพร้าว หอมเย็น', ['#8DBB6A', '#E8E2C8']),
+        dr('Peranakan Spice Tea', 'tea', 'hot', 90, 'ชาเครื่องเทศสูตรบ้านเพอรานากัน', ['#B58A2A', '#7A4630'])],
+      spots: [
+        sp('ตึกแถวสีพาสเทลหน้าร้าน', '08:00–10:00', 5, 5, 'ถ่ายมุมเฉียงให้เห็นแนวตึกทั้งซอย', true),
+        sp('ระเบียงชั้นสอง', '16:00–18:00', 4, 5, 'ถ่ายมองลงถนนวันตลาดนัด')] }
   ];
 
   const prep = (c) => {
@@ -478,8 +569,8 @@
     { xp: 450, name: 'Regular' }, { xp: 700, name: 'Connoisseur' }, { xp: 1000, name: 'Café Legend' }
   ];
 
-  const OWNER_MOODS = [['calm', 'Calm'], ['music', 'Music'], ['bright', 'Bright'], ['cozy', 'Cozy'], ['event', 'Event'], ['busy', 'Busy']];
-  const OWNER_MOOD_MAP = { calm: ['relax', 'alone', 'focus'], music: ['social', 'creative'], bright: ['photo', 'relax'], cozy: ['cozy', 'relax'], event: ['social'], busy: ['social'] };
+  const OWNER_MOODS = [['calm', 'Calm'], ['music', 'Music'], ['bright', 'Bright'], ['cozy', 'Cozy'], ['event', 'Event'], ['busy', 'Busy'], ['other', 'อื่นๆ']];
+  const OWNER_MOOD_MAP = { calm: ['relax', 'alone', 'focus'], music: ['social', 'creative'], bright: ['photo', 'relax'], cozy: ['cozy', 'relax'], event: ['social'], busy: ['social'], other: [] };
 
   CM.data = {
     OWNER_MOODS, OWNER_MOOD_MAP,

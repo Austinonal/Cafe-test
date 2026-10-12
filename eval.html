@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Café Mood · ชุดทดสอบสูตร</title>
+<style>
+:root{--bg:#F5EDE2;--surface:#FFFAF2;--line:#E3D3BF;--ink:#2A1D15;--muted:#75604F;--accent:#B04F26;--ok:#3C5E2F;--okbg:#E3ECD8;--bad:#B3261E;--badbg:#FBE4E1;--warn:#8A5A00;--warnbg:#F8EBC8}
+@media (prefers-color-scheme:dark){:root{--bg:#17110D;--surface:#241A14;--line:#3E2F25;--ink:#F4EADC;--muted:#AE9983;--accent:#E88B5B;--ok:#A9CB94;--okbg:#27331F;--bad:#FFB4AB;--badbg:#3E1E1B;--warn:#E8B04A;--warnbg:#3A2C10}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'IBM Plex Sans Thai','Noto Sans Thai','Leelawadee UI',Tahoma,system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px 16px 64px}a{color:var(--accent)}
+h1{font-size:24px;margin:8px 0 4px}h2{font-size:18px;margin:28px 0 8px}p{margin:4px 0}.muted{color:var(--muted)}.small{font-size:13px}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}.sum div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:center}.sum b{display:block;font-size:26px}
+.sum .f b{color:var(--bad)}.sum .w b{color:var(--warn)}.sum .p b{color:var(--ok)}
+ul.r{list-style:none;margin:0;padding:0;display:grid;gap:6px}ul.r li{display:grid;grid-template-columns:24px 1fr;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.m{font-weight:700;text-align:center}.ok .m{color:var(--ok)}.bad{background:var(--badbg)!important}.bad .m{color:var(--bad)}.warn{background:var(--warnbg)!important}.warn .m{color:var(--warn)}
+li small{display:block;color:var(--muted)}
+.bars{display:grid;gap:6px;margin-top:8px}.bar{display:grid;grid-template-columns:150px 1fr 56px;gap:8px;align-items:center;font-size:13px}.bar i{display:block;height:12px;border-radius:6px;background:var(--accent)}.bar span.t{background:var(--line);border-radius:6px;display:block}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;border:1px solid var(--line);margin-left:6px;color:var(--muted)}
+button{font:inherit;background:var(--accent);color:#fff;border:0;border-radius:99px;padding:10px 18px;cursor:pointer;min-height:44px}
+details{margin:8px 0}summary{cursor:pointer;min-height:32px}
+</style>
+</head>
+<body><main>
+<p><a href="index.html">← กลับไปแอป</a></p>
+<h1>ชุดทดสอบสูตรแนะนำ</h1>
+<p class="muted">รันบน <code>js/engine.js</code> + <code>js/data.js</code> จริงในเบราว์เซอร์นี้ — เรียกใช้ทุกครั้งที่แก้สูตร หรือรันในเครื่องด้วย <code>node tests/run-eval.js</code></p>
+<div id="out"><p class="muted">กำลังรัน…</p></div>
+<script src="js/data.js"></script><script src="js/engine.js"></script><script src="tests/golden.js"></script><script src="tests/eval.js"></script>
+<script>
+(function(){
+  const esc=(s)=>String(s).replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const li=(o)=>{const k=o.ok?'ok':(o.sev?'warn':'bad');return '<li class="'+k+'"><span class="m">'+(o.ok?'✓':o.sev?'⚠':'✗')+'</span><span>'+esc((o.id?o.id+' ':'')+o.title)+(o.sev?'<span class="tag">'+(o.sev==='known'?'ปัญหาที่รู้แล้ว':'ควรดู')+'</span>':'')+(o.note&&(!o.ok||o.show)?'<small>'+esc(o.note)+'</small>':'')+'</span></li>';};
+  function go(){
+    let r; try{ r=CM_EVAL.run(window.CM, window.CM_GOLDEN); }catch(e){ document.getElementById('out').innerHTML='<p class="bad" style="padding:12px;border-radius:12px">รันไม่สำเร็จ: '+esc(e.message)+'</p>'; return; }
+    const g=r.golden.map((x)=>({ok:x.status!=='changed',title:x.id+' '+x.status,note:x.was?x.was.join(', ')+' → '+x.top.join(', '):x.top.join(', ')}));
+    const all=[].concat(r.cases,r.invariants,g,r.fairness.checks);
+    const fail=all.filter((x)=>!x.ok&&!x.sev).length, warn=all.filter((x)=>!x.ok&&x.sev).length, pass=all.filter((x)=>x.ok).length;
+    const F=r.fairness, max=Math.max.apply(null,F.groups.map((x)=>Math.max(x.rate,x.restRate)))||1;
+    const bars=F.groups.map((x)=>'<div class="bar"><span>'+esc(x.title.replace(/ เทียบกับร้านอื่น/,''))+'</span><span class="t"><i style="width:'+Math.round(x.rate/max*100)+'%"></i></span><b>'+(x.ratio==null?'–':x.ratio.toFixed(2)+'×')+'</b></div>').join('');
+    const top=F.rows.slice().sort((a,b)=>b.top3Open-a.top3Open).map((x)=>'<div class="bar"><span>'+esc(x.name)+'<span class="tag">'+x.reviews+' รีวิว</span></span><span class="t"><i style="width:'+Math.round(x.top3Open*100)+'%"></i></span><b>'+Math.round(x.top3Open*100)+'%</b></div>').join('');
+    document.getElementById('out').innerHTML=
+      '<div class="sum"><div class="p"><b>'+pass+'</b>ผ่าน</div><div class="w"><b>'+warn+'</b>ควรดู</div><div class="f"><b>'+fail+'</b>ไม่ผ่าน</div></div>'+
+      '<p><button onclick="location.reload()">รันอีกครั้ง</button></p>'+
+      '<h2>1 · ผู้ใช้แบบนี้ + อากาศแบบนี้ → ควรได้ร้านแบบนี้ ('+r.cases.length+' ข้อ)</h2><ul class="r">'+r.cases.map(li).join('')+'</ul>'+
+      '<h2>2 · กฎที่ต้องจริงเสมอ</h2><ul class="r">'+r.invariants.map(li).join('')+'</ul>'+
+      '<h2>3 · Golden — อันดับ 1–3 ของสถานการณ์มาตรฐาน</h2><p class="muted small">ถ้าขึ้น ✗ แปลว่าอันดับเปลี่ยนจากครั้งก่อน: ถ้าตั้งใจเปลี่ยน ให้รัน <code>node tests/run-eval.js --update-golden</code></p><ul class="r">'+g.map((x)=>li(Object.assign({show:true},x))).join('')+'</ul>'+
+      '<h2>4 · ความเป็นธรรมกับร้านเล็ก / ร้านลับ</h2><p class="muted small">จำลอง '+F.sessions+' สถานการณ์ (อากาศ × ชั่วโมง × mood × บุคลิก) นับว่าแต่ละร้านติด 3 อันดับแรกกี่ % ของช่วงที่ร้านเปิด</p>'+
+      '<ul class="r">'+F.checks.map((x)=>li(Object.assign({show:true},x))).join('')+'</ul>'+
+      '<h3>กลุ่มเทียบกับร้านอื่น (อัตราส่วนการถูกแสดง)</h3><div class="bars">'+bars+'</div>'+
+      '<details><summary>ดูรายร้าน (ติด 3 อันดับแรกกี่ % ของช่วงที่เปิด)</summary><div class="bars">'+top+'</div></details>';
+  }
+  go();
+})();
+</script>
+</main></body></html>

@@ -10,7 +10,8 @@
     cloudy: { kind: 'cloudy', night: false, hour: 15 },
     rain:   { kind: 'rain',   night: false, hour: 16 },
     hot:    { kind: 'hot',    night: false, hour: 13 },
-    night:  { kind: 'cloudy', night: true,  hour: 21 }
+    night:  { kind: 'cloudy', night: true,  hour: 21 },
+    haze:   { kind: 'cloudy', night: false, hour: 14, pm: 68 }   // v23: simulate a PM2.5 day (Thai "orange" band)
   };
 
   const nowHour = () => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; };
@@ -22,7 +23,7 @@
     let icon = { sunny: 'sun', cloudy: 'cloud', rain: 'cloud-rain', hot: 'thermometer' }[kind];
     if (night && kind !== 'rain') { label = 'ค่ำแล้ว'; icon = 'moon'; }
     return {
-      kind, night, hour: o.hour, temp: o.temp == null ? null : Math.round(o.temp),
+      kind, night, hour: o.hour, temp: o.temp == null ? null : Math.round(o.temp), pm: o.pm == null ? null : Math.round(o.pm * 10) / 10,
       label, icon, source: o.source,
       ambient: kind === 'rain' ? 'rain' : (night ? 'night' : kind)
     };
@@ -47,13 +48,26 @@
     const st = store.get(), c = st.weatherCache;
     if (!c || st.weatherOverride || Date.now() - c.ts > 30 * 60 * 1000) return null;
     if (c.lat !== st.location.lat || c.lon !== st.location.lon) return null;
-    return make({ kind: c.kind, night: c.night, temp: c.temp, hour: nowHour(), source: 'live' });
+    return make({ kind: c.kind, night: c.night, temp: c.temp, pm: c.pm, hour: nowHour(), source: 'live' });
   }
 
   function initial() {
     const o = store.get().weatherOverride;
     if (o && SIM[o]) return make(Object.assign({ source: 'sim' }, SIM[o]));
     return fromCache() || fromTime();
+  }
+
+  // Current PM2.5 (µg/m³) from Open-Meteo's air-quality API (free, no key). Modelled data, not a ground station —
+  // shortcut: for the official number use Air4Thai (PCD) once there is a backend to proxy it.
+  async function airQuality(lat, lon) {
+    try {
+      const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 6000);
+      const res = await fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=' + lat + '&longitude=' + lon + '&current=pm2_5&timezone=auto', { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) return null;
+      const v = (await res.json()).current;
+      return v && typeof v.pm2_5 === 'number' ? v.pm2_5 : null;
+    } catch (e) { return null; }
   }
 
   const W = {
@@ -86,8 +100,10 @@
           // the user may have switched to a simulated weather while we were waiting
           if (store.get().weatherOverride) return;
           const kind = kindFromCode(c.weather_code, c.temperature_2m);
-          store.patch({ weatherCache: { ts: Date.now(), kind, night: c.is_day === 0, temp: c.temperature_2m, lat, lon } });
-          W.ctx = make({ kind, night: c.is_day === 0, temp: c.temperature_2m, hour: nowHour(), source: 'live' });
+          const pm = await airQuality(lat, lon);   // null when the air-quality service is unreachable
+          if (store.get().weatherOverride) return;
+          store.patch({ weatherCache: { ts: Date.now(), kind, night: c.is_day === 0, temp: c.temperature_2m, pm, lat, lon } });
+          W.ctx = make({ kind, night: c.is_day === 0, temp: c.temperature_2m, pm, hour: nowHour(), source: 'live' });
           W.emit();
           return;
         } catch (e) {
@@ -119,7 +135,7 @@
     describe() {
       const c = W.ctx;
       const src = { live: 'จากสภาพอากาศจริง', sim: 'โหมดจำลอง', time: 'ประมาณจากเวลา' }[c.source];
-      return c.label + (c.temp != null ? ' · ' + c.temp + '°C' : '') + ' (' + src + ')';
+      return c.label + (c.temp != null ? ' · ' + c.temp + '°C' : '') + (c.pm != null ? ' · PM2.5 ' + Math.round(c.pm) : '') + ' (' + src + ')';
     }
   };
 

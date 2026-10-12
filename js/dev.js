@@ -121,9 +121,10 @@
   const contact = () => L().contact || content.contact || null;
   const products = () => merge(content.products, L().products).filter((p) => !L().pgone.includes(p.id));
   // What a buyer sees when asked to transfer: the PromptPay QR and the account lines
-  function payBox() {
+  function payBox(amount) {
     const p = pay() || {}, li = (k, v) => (v ? '<li><span>' + k + '</span><b>' + esc(v) + '</b></li>' : '');
-    return (p.qr ? '<div class="pay-qr-wrap"><img class="pay-qr" src="' + esc(p.qr) + '" alt="QR พร้อมเพย์สำหรับโอนเงิน"></div>' : '') + '<ul class="xp-lines">' + li('พร้อมเพย์', p.promptpay) + li('ชื่อบัญชี', p.name) + li('บัญชีธนาคาร', p.bank) + '</ul>';
+    const dyn = amount > 0 && p.promptpay && CM.thai ? CM.thai.ppQrHtml(p.promptpay, amount) : '';   // v23: a QR that already carries the amount; the pasted image is the fallback
+    return (dyn || (p.qr ? '<div class="pay-qr-wrap"><img class="pay-qr" src="' + esc(p.qr) + '" alt="QR พร้อมเพย์สำหรับโอนเงิน"></div>' : '')) + '<ul class="xp-lines">' + li('พร้อมเพย์', p.promptpay) + li('ชื่อบัญชี', p.name) + li('บัญชีธนาคาร', p.bank) + '</ul>';
   }
   // The PromptPay QR image: scaled to fit, PNG so the code stays sharp
   function readQr(file) {
@@ -247,7 +248,8 @@
       '<div class="row2"><a class="btn primary" href="#/dev/add">' + I('plus', 18) + 'เพิ่มร้าน</a><a class="btn ghost" href="#/dev/import">' + I('pin', 18) + 'จาก Google Maps</a></div>' +
       '<div class="row2"><a class="btn ghost" href="#/dev/codes">' + I('sparkles', 18) + 'ออกโค้ด</a><a class="btn ghost" href="#/dev/inbox">' + I('wallet', 18) + 'รับเรื่องจากร้าน</a></div>' +
       '<div class="row2"><a class="btn ghost" href="#/dev/products">' + I('trophy', 18) + 'แพ็กเกจและฟีเจอร์</a><a class="btn ghost" href="#/dev/news">' + I('bolt', 18) + 'ประกาศ (' + newsActive().length + ')</a></div>' +
-      '<a class="btn ghost block" href="#/dev/settings">' + I('sliders', 18) + 'ตั้งค่า (รับเงิน ติดต่อ กุญแจ)</a>' + drafts +
+      '<a class="btn ghost block" href="#/dev/settings">' + I('sliders', 18) + 'ตั้งค่า (รับเงิน ติดต่อ กุญแจ)</a>' +
+      '<a class="btn ghost block" href="eval.html">' + I('check', 18) + 'ชุดทดสอบสูตรแนะนำ</a>' + drafts +
       '<div class="card"><h2 class="sec-title first">' + I('refresh', 20) + 'เผยแพร่ให้ทุกคนเห็น</h2>' +
       '<p class="muted small">ร้าน ประกาศ รหัสเจ้าของ และข้อมูลร้านที่ทำที่นี่เห็นในเครื่องนี้ทันที ถ้าจะให้ทุกคนเห็น: กดดาวน์โหลด content.js แล้วอัปโหลดทับไฟล์ <b>js/content.js</b> ใน GitHub (Add file → Upload files) รอ 1–2 นาที</p>' +
       '<p class="muted small">ในเครื่องนี้ยังไม่ได้เผยแพร่: ร้าน ' + l.cafes.length + ' · ประกาศ ' + l.news.length + ' · รหัสเจ้าของ ' + Object.keys(l.owners).length + ' · ข้อมูลร้าน ' + Object.keys(l.shops).length + (pending ? '' : ' (ยังไม่มีอะไรใหม่)') + '</p>' +
