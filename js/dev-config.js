@@ -11,3 +11,7 @@
       and leave passcode empty. The passcode itself never appears in the repository. */
 window.CM = window.CM || {};
 CM.devConfig = { passcode: '', salt: '', hash: '' };
+
+/* LINE (optional). Leave empty to use the demo flow. liffId comes from LINE Developers → your LIFF app (Endpoint URL = this site);
+   oaId is your Official Account basic ID, e.g. '@cafemood'. */
+CM.lineConfig = { liffId: '', oaId: '' };
