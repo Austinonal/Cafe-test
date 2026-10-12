@@ -436,11 +436,10 @@ textarea::placeholder { color: var(--muted); }
 .map-count { padding: 8px 20px 0; font-size: 13px; color: var(--muted); }
 .pad.tight { padding-top: 10px; }
 .map-fallback { height: 100%; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; color: var(--muted); padding: 20px; }
-.pin { width: 44px; height: 44px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: #A8481F; border: 2px solid #fff; display: grid; place-items: center; }
-.pin span { transform: rotate(45deg); color: #fff; font: 700 14px/1 var(--font-body); }
-.dot { width: 24px; height: 24px; border-radius: 50%; background: color-mix(in srgb, #A8481F var(--m, 50%), #fff); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(168, 72, 31, .5); }
-.leaflet-marker-icon:focus-visible .pin, .leaflet-marker-icon:focus-visible .dot, .leaflet-marker-icon.sel .pin, .leaflet-marker-icon.sel .dot { outline: 3px solid var(--focus); outline-offset: 3px; }
-.leaflet-marker-icon.sel .dot { background: #A8481F; }
+.pin { width: 40px; height: 40px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: #A8481F; border: 2px solid #fff; display: grid; place-items: center; }
+.pin.gem { background: #6A3FA3; }
+.pin span { transform: rotate(45deg); color: #fff; font: 700 13px/1 var(--font-body); }
+.leaflet-marker-icon:focus-visible .pin, .leaflet-marker-icon.sel .pin { outline: 3px solid var(--focus); outline-offset: 3px; }
 .me-dot { width: 18px; height: 18px; border-radius: 50%; background: #1F5FBF; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(31, 95, 191, .25); }
 .name-field label { font-size: 14px; color: var(--ink-2); }
 input[type="text"] { width: 100%; min-height: 48px; padding: 0 14px; border-radius: 14px; border: 2px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; }
@@ -1332,3 +1331,4 @@ body.cm-hl .trav-tags[data-new] { outline-offset: 2px; }
 .steam path, .rise, .list > *, .stagger > *, .progress span, .bar i, .hb, .lbar i, .tab[aria-current="page"]::before, .fold.st[open] .fold-b { animation: none; }
 .steam path { opacity: .4; }
 .gemscore small { font-size: 12px; }
+.leaflet-marker-icon.sel :root[data-theme="dark"] 
