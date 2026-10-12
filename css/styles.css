@@ -2,7 +2,7 @@
 :root {
   --bg: #F5EDE2; --bg-2: #EBDFCE; --surface: #FFFAF2; --surface-2: #F8F0E4;
   --line: #E3D3BF; --line-strong: #B9A48C;
-  --ink: #2A1D15; --ink-2: #5A473A; --muted: #75604F;
+  --ink: #2A1D15; --ink-2: #5A473A; --muted: #6B5645;
   --accent: #B04F26; --accent-ink: #FFFFFF; --accent-soft: #F6DDCB;
   --leaf: #3C5E2F; --leaf-soft: #E3ECD8;
   --gem: #7A4FB0; --gem-soft: #EDE3F8; --gem-ink: #5B3690;
@@ -436,10 +436,11 @@ textarea::placeholder { color: var(--muted); }
 .map-count { padding: 8px 20px 0; font-size: 13px; color: var(--muted); }
 .pad.tight { padding-top: 10px; }
 .map-fallback { height: 100%; display: grid; place-content: center; justify-items: center; gap: 10px; text-align: center; color: var(--muted); padding: 20px; }
-.pin { width: 40px; height: 40px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: #A8481F; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, .4); display: grid; place-items: center; }
-.pin.gem { background: #6A3FA3; }
-.pin span { transform: rotate(45deg); color: #fff; font: 700 13px/1 var(--font-body); }
-.leaflet-marker-icon:focus-visible .pin { outline: 3px solid var(--focus); outline-offset: 3px; }
+.pin { width: 44px; height: 44px; border-radius: 50% 50% 50% 4px; transform: rotate(-45deg); background: #A8481F; border: 2px solid #fff; display: grid; place-items: center; }
+.pin span { transform: rotate(45deg); color: #fff; font: 700 14px/1 var(--font-body); }
+.dot { width: 24px; height: 24px; border-radius: 50%; background: color-mix(in srgb, #A8481F var(--m, 50%), #fff); border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(168, 72, 31, .5); }
+.leaflet-marker-icon:focus-visible .pin, .leaflet-marker-icon:focus-visible .dot, .leaflet-marker-icon.sel .pin, .leaflet-marker-icon.sel .dot { outline: 3px solid var(--focus); outline-offset: 3px; }
+.leaflet-marker-icon.sel .dot { background: #A8481F; }
 .me-dot { width: 18px; height: 18px; border-radius: 50%; background: #1F5FBF; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(31, 95, 191, .25); }
 .name-field label { font-size: 14px; color: var(--ink-2); }
 input[type="text"] { width: 100%; min-height: 48px; padding: 0 14px; border-radius: 14px; border: 2px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; }
@@ -1287,3 +1288,47 @@ body.cm-hl .trav-tags[data-new] { outline-offset: 2px; }
 .coach::before { content: ''; position: absolute; left: 22px; width: 12px; height: 12px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
 .coach.up::before { top: -6px; } .coach.dn::before { bottom: -6px; } .coach.rt::before { left: auto; right: 34px; }
 .coach .btn { color: var(--accent-soft); white-space: nowrap; min-height: 44px; font-weight: 700; }
+
+
+/* v29 · Mood Map — full-bleed map, floating search + chips, bottom sheet (translate only, no height animation) */
+.mm { --mm-peek: 212px; position: relative; overflow: hidden; height: calc(100dvh - 76px - env(safe-area-inset-bottom)); }
+@media (min-width: 520px) { .mm { height: calc(100dvh - 32px - 76px); } }
+.mm .mm-map { position: absolute; inset: 0 0 var(--mm-peek) 0; height: auto; min-height: 0; }
+.mm-top { position: absolute; inset: 0 0 auto 0; z-index: 1000; display: grid; gap: 8px; padding: calc(12px + env(safe-area-inset-top)) 16px 0; pointer-events: none; }
+.mm-top > * { pointer-events: auto; }
+.mm-q { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 18px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink); text-decoration: none; font-size: 16px; }
+.mm-q .ic { color: var(--accent); flex: none; }
+.mm-q span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-top .fchips { margin: 0 -16px; padding: 2px 16px 4px; }
+.mm-legend { justify-self: end; margin: 0; padding: 4px 12px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }
+.mm-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1000; height: 78%; display: flex; flex-direction: column; background: var(--surface); border-top: 1px solid var(--line-strong); border-radius: 24px 24px 0 0; transform: translateY(calc(100% - var(--mm-peek))); transition: transform .28s var(--ease); }
+.mm-sheet.open { transform: none; }
+.mm-sheet .locate-btn { top: -68px; bottom: auto; right: 12px; box-shadow: none; }
+.mm-grab { flex: none; touch-action: none; padding: 0 16px; }
+.mm-handle { display: grid; place-items: center; width: 100%; height: 28px; }
+.mm-handle i { width: 44px; height: 5px; border-radius: 99px; background: var(--line-strong); }
+.mm-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+.mm-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.mm-peek { flex: none; padding: 0 16px; }
+.mm-peek .row-card .rc-tags { display: none; }
+.mm-peek .row-card .why { -webkit-line-clamp: 1; line-clamp: 1; }
+.mm-more { flex: 1; min-height: 0; overflow: auto; padding: 0 16px 24px; display: grid; gap: 12px; align-content: start; }
+.mm-n { margin: 0; }
+.mm-sheet:not(.open) .mm-more { visibility: hidden; }
+.mm-sheet.open .mm-peek, .mm-sheet.open .locate-btn { display: none; }
+.mm .map-note { position: absolute; left: 16px; right: 16px; top: 176px; z-index: 900; margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .mm-sheet { transition: none; } }
+
+/* v29 · calmer cards: thin border instead of layered shadows; ≤2 lines of copy per card */
+:root, :root[data-theme="light"], :root[data-theme="dark"], :root:not([data-theme="light"]) { --shadow: none; --lift: none; }
+.row-card .why, .hidden-card-row .why { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.btn.primary { box-shadow: none; }
+/* text never below 12px */
+.ring b small, .ec-body .kicker, .evbadge, .plusbadge, .trav-tags.compact .badge.trav, .pb span, .fcount { font-size: 12px; }
+.fcount { font: 700 12px/18px var(--font-body); }
+.plusbadge { font: 700 12px/1 var(--font-body); }
+.pb span { bottom: -20px; }
+/* motion only where it means something (stamp, sheet, loading, tap feedback) */
+.steam path, .rise, .list > *, .stagger > *, .progress span, .bar i, .hb, .lbar i, .tab[aria-current="page"]::before, .fold.st[open] .fold-b { animation: none; }
+.steam path { opacity: .4; }
+.gemscore small { font-size: 12px; }
