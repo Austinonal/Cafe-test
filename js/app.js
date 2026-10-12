@@ -381,7 +381,7 @@
   const provOf = (c) => c.province || 'กรุงเทพฯ'; // shortcut: demo data is all Bangkok; add `province` to a café when real data arrives
   const mapFilters = new Set();
   const MAP_FILTERS = [
-    ['mood', 'Mood วันนี้', (s, ctx) => ctx.moodTop.has(s.cafe.id)],
+    ['mood', 'Mood วันนี้', () => true],
     ['quiet', 'Quiet', (s) => s.cafe.attr.quiet >= 8],
     ['photo', 'Photo', (s) => s.cafe.attr.photo >= 8],
     ['hidden', 'Hidden', (s) => s.hidden.eligible],
@@ -395,28 +395,55 @@
     ['local', 'ท้องถิ่น', (s) => !!s.cafe.local]
   ];
 
+  let mmOpen = false, mmSel = null, mmShown = [], mmDragged = false;
   function vMap() {
-    const hasMood = !!S.get().mood;
-    const chips = MAP_FILTERS.filter((f) => f[0] !== 'mood' || hasMood).map((f) =>
-      '<button class="fchip' + (mapFilters.has(f[0]) ? ' on' : '') + '" data-act="toggle-filter" data-k="' + f[0] + '" aria-pressed="' + mapFilters.has(f[0]) + '">' + f[1] + '</button>').join('');
+    const m = S.get().mood, hasMood = !!m;
+    mmOpen = false; mmSel = null;
+    const chips = MAP_FILTERS.map((f) => '<button class="fchip" data-act="toggle-filter" data-k="' + f[0] + '" aria-pressed="false">' + (f[0] === 'mood' && !hasMood ? 'ทั้งหมด' : f[1]) + '</button>').join('');
+    const q = hasMood ? esc(((m.labels || []).slice(0, 2).join(' · ') || 'Mood วันนี้')) : 'เลือก Mood วันนี้';
     return { nav: true, mount: initMap, html:
-      '<header class="hero-top ambient compact"><div class="topbar between"><span class="brand">' + I('map', 20) + 'Map</span>' + weatherChip() + '</div>' +
-      '<div class="fchips" role="group" aria-label="ตัวกรองแผนที่">' + chips + '</div>' + geoRow() + '</header>' +
-      '<section class="map-wrap"><div class="map-stage"><div id="map" class="map"></div><button class="locate-btn" id="locateBtn" data-act="locate-me" aria-label="หาตำแหน่งของฉัน">' + I('navigation', 22) + '</button></div><p id="mapCount" class="map-count" aria-live="polite"></p><div id="mapCard" class="pad tight"></div></section>' };
+      '<section class="mm"><div id="map" class="map mm-map"></div>' +
+      '<div class="mm-top"><a class="mm-q" href="#/home" aria-label="' + (hasMood ? 'เปลี่ยน Mood วันนี้' : 'เลือก Mood วันนี้') + '">' + I('compass', 22) + '<span>' + q + ' · ' + esc(W.ctx.label) + '</span></a>' +
+      '<div class="fchips" role="group" aria-label="ตัวกรองแผนที่">' + chips + '</div><p class="mm-legend">หมุด = Match %</p></div>' +
+      '<div id="mmSheet" class="mm-sheet"><button class="locate-btn" id="locateBtn" data-act="locate-me" aria-label="หาตำแหน่งของฉัน">' + I('navigation', 22) + '</button>' +
+      '<div class="mm-grab"><button class="mm-handle" data-act="mm-toggle" aria-expanded="false" aria-controls="mmMore" aria-label="ดูร้านทั้งหมดเป็นรายการ"><i></i></button>' +
+      '<div class="mm-head"><h2 id="mmTitle">ท็อป 3 สำหรับวันนี้</h2><button class="btn text sm" data-act="mm-toggle" aria-expanded="false" aria-controls="mmMore" id="mmAll">ดูเป็นรายการ</button></div></div>' +
+      '<div id="mmPeek" class="mm-peek"></div><div id="mmMore" class="mm-more"></div><p id="mapCount" class="sr" aria-live="polite"></p></div></section>' };
+  }
+
+  function mmSetOpen(o) {
+    mmOpen = o;
+    const sh = $('#mmSheet'); if (!sh) return;
+    sh.classList.toggle('open', o);
+    $$('[data-act="mm-toggle"]').forEach((b) => b.setAttribute('aria-expanded', o));
+    const all = $('#mmAll'); if (all) all.textContent = o ? 'ดูแผนที่' : 'ดูเป็นรายการ';
+    if ($('#mmTitle')) mmPeek();
+  }
+
+  function bindSheet() {
+    const g = $('.mm-grab'); if (!g) return;
+    let y0 = null;
+    g.addEventListener('pointerdown', (e) => { y0 = e.clientY; });
+    g.addEventListener('pointerup', (e) => {
+      if (y0 == null) return;
+      const dy = e.clientY - y0; y0 = null;
+      if (Math.abs(dy) > 24) { mmDragged = true; mmSetOpen(dy < 0); }
+    });
+    g.addEventListener('pointercancel', () => { y0 = null; });
   }
 
   function initMap() {
     const box = $('#map');
     if (!box) return;
     meMarker = meAcc = null;
-    bindGeoRow();
-    if (!window.L) { box.innerHTML = '<div class="map-fallback">' + I('map', 28) + '<p>ต้องต่ออินเทอร์เน็ตเพื่อโหลดแผนที่</p><a class="btn ghost" href="#/discover">ดูเป็นรายการแทน</a></div>'; return; }
+    bindSheet();
+    if (!window.L) { box.innerHTML = '<div class="map-fallback">' + I('map', 28) + '<p>ต้องต่ออินเทอร์เน็ตเพื่อโหลดแผนที่ — ดูเป็นรายการแทนได้เลย</p></div>'; mmSetOpen(true); drawMarkers(); return; }
     const c = center();
-    map = L.map(box, { zoomControl: true, dragging: true, tap: true, scrollWheelZoom: true, touchZoom: true, doubleClickZoom: true, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([c.lat, c.lon], 12);
+    map = L.map(box, { zoomControl: false, dragging: true, tap: true, scrollWheelZoom: true, touchZoom: true, doubleClickZoom: true, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([c.lat, c.lon], 12);
     L.control.scale({ imperial: false }).addTo(map);
     let tileFail = 0;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map)
-      .on('tileerror', () => { if (++tileFail === 3) box.insertAdjacentHTML('afterend', '<p class="map-note" role="status">โหลดพื้นแผนที่ไม่ได้ — OpenStreetMap ต้องเปิดผ่านเว็บ https (เช่น GitHub Pages) หรือ localhost ถ้าเปิดไฟล์ตรง ๆ หรืออยู่ในหน้าตัวอย่างจะเห็นแต่หมุด</p>'); });
+      .on('tileerror', () => { if (++tileFail === 3) box.insertAdjacentHTML('afterend', '<p class="map-note" role="status">โหลดพื้นแผนที่ไม่ได้ — OpenStreetMap ต้องเปิดผ่านเว็บ https (เช่น GitHub Pages) หรือ localhost ถ้าเปิดไฟล์ตรง ๆ จะเห็นแต่หมุด · ดูเป็นรายการได้ที่ปุ่มด้านล่าง</p>'); });
     const loc0 = S.get().location;
     if (loc0.source === 'gps') showMe(loc0);
     drawMarkers(true);
@@ -437,7 +464,7 @@
   function bindGeoRow() {
     const pv = $('#geoProv'), ar = $('#geoArea');
     if (!pv || !ar) return;
-    pv.onchange = () => { geo.prov = pv.value; geo.area = ''; const row = $('.geo-row'); row.outerHTML = geoRow(); bindGeoRow(); drawMarkers(true); };
+    pv.onchange = () => { geo.prov = pv.value; geo.area = ''; drawMarkers(true); };
     ar.onchange = () => { geo.area = ar.value; drawMarkers(true); };
   }
 
@@ -474,28 +501,46 @@
     } finally { btn.disabled = false; btn.classList.remove('busy'); }
   }
 
+  function mmPeek() {
+    const s = mmShown.find((x) => x.cafe.id === mmSel) || mmShown[0];
+    $('#mmTitle').textContent = mmOpen ? 'ร้านทั้งหมด ' + mmShown.length + ' ร้าน' : mmSel ? 'ร้านที่เลือก' : mapFilters.size ? 'ท็อป 3 ที่ตรงตัวกรอง' : 'ท็อป 3 สำหรับวันนี้';
+    $('#mmPeek').innerHTML = s ? rowCard(s) : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ปิดตัวกรองบางอัน หรือเลือก “' + (S.get().mood ? 'Mood วันนี้' : 'ทั้งหมด') + '” เพื่อล้างทั้งหมด</p></div>';
+  }
+
+  function mmSelect(id) {
+    mmSel = id;
+    mapMarkers.forEach((m) => { const e = m.getElement(); if (e) e.classList.toggle('sel', m._cid === id); m.setZIndexOffset(m._cid === id ? 2000 : m._z); });
+    mmPeek();
+  }
+
   function drawMarkers(fit) {
-    if (!map) return;
     mapMarkers.forEach((m) => m.remove());
     mapMarkers = [];
     const ses = session();
     const all = D.CAFES.map((c) => E.scoreCafe(c, ses));
-    const ctx = { moodTop: new Set(all.slice().sort((a, b) => b.match - a.match).slice(0, 6).map((s) => s.cafe.id)) };
-    const shown = all.filter((s) => Array.from(mapFilters).every((k) => MAP_FILTERS.find((f) => f[0] === k)[2](s, ctx)) &&
+    const shown = all.filter((s) => Array.from(mapFilters).every((k) => MAP_FILTERS.find((f) => f[0] === k)[2](s)) &&
       (!geo.prov || provOf(s.cafe) === geo.prov) && (!geo.area || s.cafe.area === geo.area));
-    shown.forEach((s) => {
-      const gem = s.hidden.eligible && s.hidden.score >= 80;
-      const m = L.marker([s.cafe.lat, s.cafe.lon], {
-        icon: L.divIcon({ className: '', html: '<div class="pin' + (gem ? ' gem' : '') + '"><span>' + s.match + '</span></div>', iconSize: [40, 40], iconAnchor: [20, 48] }),
-        title: s.cafe.name + ' — Match ' + s.match + '%', alt: s.cafe.name
-      }).addTo(map);
-      m.on('click', () => { $('#mapCard').innerHTML = rowCard(s); });
+    const nearOf = (s) => (geo.prov || geo.area || mapFilters.has('local') || E.distKm(center(), s.cafe) < 40 ? 1 : 0);   // top 3 = near AND matching, not a café 500 km away
+    shown.sort((a, b) => nearOf(b) - nearOf(a) || b.match - a.match);
+    mmShown = shown;
+    if (!shown.some((s) => s.cafe.id === mmSel)) mmSel = null;
+    $$('.mm-top [data-k]').forEach((b) => { const on = b.dataset.k === 'mood' ? !mapFilters.size : mapFilters.has(b.dataset.k); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    $('#mapCount').textContent = all.length ? 'แสดง ' + shown.length + ' จาก ' + all.length + ' ร้าน' : 'ยังไม่มีคาเฟ่ในระบบ';
+    $('#mmMore').innerHTML = geoRow() + '<p class="muted small mm-n">' + $('#mapCount').textContent + ' · ใกล้ก่อน แล้วเรียงตาม Match</p>' + (shown.length ? '<div class="list">' + shown.map((s) => rowCard(s)).join('') + '</div>' : '');
+    bindGeoRow();
+    mmPeek();
+    if (!map) return;
+    shown.forEach((s, i) => {
+      const top = i < 3, z = top ? 1000 - i : 0;
+      const icon = top ? L.divIcon({ className: '', html: '<div class="pin"><span>' + s.match + '</span></div>', iconSize: [44, 44], iconAnchor: [22, 52] })
+        : L.divIcon({ className: '', html: '<div class="dot" style="--m:' + Math.round(25 + s.match * .35) + '%"></div>', iconSize: [26, 26], iconAnchor: [13, 13] });
+      const m = L.marker([s.cafe.lat, s.cafe.lon], { icon, zIndexOffset: z, title: s.cafe.name + ' — Match ' + s.match + '%', alt: s.cafe.name + ' Match ' + s.match + '%' }).addTo(map);
+      m._cid = s.cafe.id; m._z = z;
+      m.on('click', () => mmSelect(s.cafe.id));
       mapMarkers.push(m);
     });
-    $('#mapCount').textContent = all.length ? 'แสดง ' + shown.length + ' จาก ' + all.length + ' ร้าน · เลขบนหมุด = Match วันนี้' : 'ยังไม่มีคาเฟ่ในระบบ';
-    $('#mapCard').innerHTML = shown.length || !all.length ? '' : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ลองปิดตัวกรองบางอัน</p></div>';
     const near = shown.filter((s) => E.distKm(center(), s.cafe) < 40), fitSet = geo.prov || geo.area || mapFilters.has('local') || !near.length ? shown : near;   // v23: Bangkok first, so the far-away local cafés don't zoom the map out to the whole country
-    if (fit && shown.length) map.fitBounds(L.latLngBounds(fitSet.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
+    if (fit && shown.length) map.fitBounds(L.latLngBounds(fitSet.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])), { maxZoom: 14, animate: false, paddingTopLeft: [24, 150], paddingBottomRight: [24, 28] });
   }
 
   function vResults() {
@@ -1185,10 +1230,10 @@
     'locate-me': (el) => locateMe(el),
     'toggle-filter': (el) => {
       const k = el.dataset.k;
-      if (mapFilters.has(k)) mapFilters.delete(k); else mapFilters.add(k);
-      el.classList.toggle('on', mapFilters.has(k)); el.setAttribute('aria-pressed', mapFilters.has(k));
-      drawMarkers(true);
+      if (k === 'mood') mapFilters.clear(); else if (mapFilters.has(k)) mapFilters.delete(k); else mapFilters.add(k);
+      mmSel = null; drawMarkers(true);
     },
+    'mm-toggle': () => { if (mmDragged) { mmDragged = false; return; } mmSetOpen(!mmOpen); },
     'open-weather': () => sheetWeather(),
     'fav-cafe': (el) => {
       const st = S.get(), id = el.dataset.id, list = st.favCafes || [], on = !list.includes(id);
