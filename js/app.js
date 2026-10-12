@@ -442,7 +442,8 @@
     map = L.map(box, { zoomControl: false, dragging: true, tap: true, scrollWheelZoom: true, touchZoom: true, doubleClickZoom: true, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([c.lat, c.lon], 12);
     L.control.scale({ imperial: false }).addTo(map);
     let tileFail = 0;
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map)
+    const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map)
       .on('tileerror', () => { if (++tileFail === 3) box.insertAdjacentHTML('afterend', '<p class="map-note" role="status">โหลดพื้นแผนที่ไม่ได้ — OpenStreetMap ต้องเปิดผ่านเว็บ https (เช่น GitHub Pages) หรือ localhost ถ้าเปิดไฟล์ตรง ๆ จะเห็นแต่หมุด · ดูเป็นรายการได้ที่ปุ่มด้านล่าง</p>'); });
     const loc0 = S.get().location;
     if (loc0.source === 'gps') showMe(loc0);
@@ -511,6 +512,8 @@
     mmSel = id;
     mapMarkers.forEach((m) => { const e = m.getElement(); if (e) e.classList.toggle('sel', m._cid === id); m.setZIndexOffset(m._cid === id ? 2000 : m._z); });
     mmPeek();
+    const sm = mapMarkers.find((m) => m._cid === id);
+    if (map && sm && !map.getBounds().pad(-.15).contains(sm.getLatLng())) map.panTo(sm.getLatLng(), { animate: false });
   }
 
   function drawMarkers(fit) {
@@ -533,7 +536,7 @@
     shown.forEach((s, i) => {
       const top = i < 3, z = top ? 1000 - i : 0;
       const icon = top ? L.divIcon({ className: '', html: '<div class="pin"><span>' + s.match + '</span></div>', iconSize: [44, 44], iconAnchor: [22, 52] })
-        : L.divIcon({ className: '', html: '<div class="dot" style="--m:' + Math.round(25 + s.match * .35) + '%"></div>', iconSize: [26, 26], iconAnchor: [13, 13] });
+        : L.divIcon({ className: '', html: '<div class="dot" style="--m:' + Math.round(25 + s.match * .35) + '%"><span>' + s.match + '</span></div>', iconSize: [32, 32], iconAnchor: [16, 16] });
       const m = L.marker([s.cafe.lat, s.cafe.lon], { icon, zIndexOffset: z, title: s.cafe.name + ' — Match ' + s.match + '%', alt: s.cafe.name + ' Match ' + s.match + '%' }).addTo(map);
       m._cid = s.cafe.id; m._z = z;
       m.on('click', () => mmSelect(s.cafe.id));
