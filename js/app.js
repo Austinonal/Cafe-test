@@ -111,18 +111,14 @@
   function vWelcome() {
     return { nav: false, html:
       '<section class="welcome rise">' +
-      '<div class="welcome-art" aria-hidden="true">' + A.drinkArt({ temp: 'hot', colors: ['#C98B4B', '#5B3A22'] }) + '</div>' +
-      '<p class="eyebrow">Café Mood</p>' +
-      '<h1 class="display">Don’t find a café.<br>Find <em>your</em> café for&nbsp;today.</h1>' +
-      '<p class="lead">ไม่ได้ถามแค่ว่า “คาเฟ่ไหนดี?” แต่ถามว่า <strong>“วันนี้ฉันควรไปคาเฟ่ไหน?”</strong></p>' +
-      '<ul class="pillars">' +
-      '<li>' + I('sparkles', 20) + '<div><b>Mood วันนี้</b><span>รู้สึกยังไง อยากทำอะไร</span></div></li>' +
-      '<li>' + I('cloud-rain', 20) + '<div><b>สภาพอากาศ</b><span>เราคิดให้เอง ไม่ต้องกด</span></div></li>' +
-      '<li>' + I('user', 20) + '<div><b>นิสัยคาเฟ่ของคุณ</b><span>Quiz สั้น ๆ 10 ข้อ</span></div></li></ul>' +
+      '<div class="welcome-copy"><p class="brand">' + I('coffee', 22) + 'Café Mood</p>' +
+      '<div class="welcome-intro"><h1 class="display">วันนี้อยากนั่ง<br>คาเฟ่แบบไหน?</h1>' +
+      '<p class="lead">บอกเราว่าอยากทำอะไร แล้วดูร้านที่เข้ากับอารมณ์ อากาศ และรสนิยมของคุณ</p></div>' +
+      '<div class="welcome-actions">' +
       (CM.auth.current()
-        ? '<button class="btn primary lg" data-act="start-quiz">เริ่มค้นหา Café Personality ของฉัน</button><button class="btn text" data-act="skip-quiz">ข้ามไปก่อน เริ่มเลย</button>'
-        : '<a class="btn primary lg" href="#/signup">สมัครสมาชิก</a><a class="btn ghost lg" href="#/login">เข้าสู่ระบบ</a><p class="muted small center">สมัครหรือเข้าสู่ระบบก่อน จึงจะเริ่มใช้งานได้</p>') +
-      '</section>' };
+        ? '<button class="btn primary lg" data-act="start-quiz">ค้นหาสไตล์คาเฟ่ของฉัน</button><button class="btn text" data-act="skip-quiz">ข้ามไปดูร้าน</button>'
+        : '<a class="btn primary lg" href="#/signup">สมัครสมาชิก ' + I('chevron-right', 18) + '</a><a class="btn text" href="#/login">เข้าสู่ระบบ</a>') +
+      '</div></div><img class="welcome-photo" src="images/window-coffee.webp" alt="" fetchpriority="high"></section>' };
   }
 
   function vQuiz(n) {
@@ -161,12 +157,12 @@
   }
 
   /* ---------- ① Home — "Today" ---------- */
-  const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+  const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'สวัสดีตอนเช้า' : h < 17 ? 'สวัสดีตอนบ่าย' : 'สวัสดีตอนเย็น'; };
 
   function heroCard(s) {
     const c = s.cafe;
-    return '<a class="hero-card" href="#/cafe/' + c.id + '"><div class="hc-cover">' + A.coverArt(c) + '<span class="badge solid">Top pick</span></div>' +
-      '<div class="hc-body"><div class="hc-head"><div><h2>' + esc(c.name) + '</h2><p class="meta">' + I('pin', 14) + esc(c.area) + ' · ' + fmtDist(c) + ' · ' + priceText(c) + '</p></div>' + ring(s.match, 64) + '</div>' +
+    return '<a class="hero-card" href="#/cafe/' + c.id + '">' + (c.banner ? '<div class="hc-cover">' + A.coverArt(c) + '</div>' : '') +
+      '<div class="hc-body"><div class="hc-head"><div><h3>' + esc(c.name) + '</h3><p class="meta">' + I('pin', 14) + esc(c.area) + ' · ' + fmtDist(c) + ' · ' + priceText(c) + '</p></div>' + ring(s.match, 64) + '</div>' +
       '<ul class="reasons">' + s.reasons.map((r) => '<li>' + I('check', 16) + esc(r) + '</li>').join('') + '</ul><div class="badges">' + badges(s) + '</div></div></a>';
   }
 
@@ -195,16 +191,17 @@
     const dp = E.drinkRank(ses)[0];
     const near = ranked.filter((s) => s.hidden.eligible && E.distKm(center(), s.cafe) <= 5).sort((a, b) => b.hidden.score - a.hidden.score);
     const moodLine = hasMood
-      ? '<p class="mood-line">Your Café Mood · <b>' + esc(E.moodHeadline(ses.mood, W.ctx)) + '</b><span class="inline-ic">' + I(W.ctx.icon, 18) + '</span></p>'
-      : '<p class="muted small">ยังไม่ได้เลือก mood — ตอนนี้เลือกจากนิสัยคาเฟ่ของคุณและอากาศ</p>';
-    return CM.thai.comfortHtml() + CM.thai.festBannerHtml() + otherMatchHtml(ses) + '<h2 class="sec-title">' + I('sparkles', 20) + 'Recommended for You</h2>' + moodLine +
-      heroCard(ranked[0]) + CM.thai.homeFirstTime(ranked[0].cafe) + '<div class="list">' + ranked.slice(1, 3).map((s) => rowCard(s)).join('') + '</div>' +
+      ? '<p class="mood-line">' + esc(E.moodHeadline(ses.mood, W.ctx)) + '</p>'
+      : '<p class="muted small">คัดจากอากาศและรสนิยมของคุณ</p>';
+    return '<div class="today-heading"><h2 class="sec-title">คาเฟ่แนะนำวันนี้</h2>' + moodLine + '</div>' +
+      CM.thai.comfortHtml() + otherMatchHtml(ses) + heroCard(ranked[0]) + '<div class="list">' + ranked.slice(1, 3).map((s) => rowCard(s)).join('') + '</div>' +
       (hasMood ? '<a class="btn ghost block" href="#/results">ดูทั้งหมด ' + I('chevron-right', 18) + '</a>' : '') +
-      '<h2 class="sec-title">' + I('cup', 20) + 'Today’s Drink</h2>' +
+      CM.thai.homeFirstTime(ranked[0].cafe) + CM.thai.festBannerHtml() +
+      '<h2 class="sec-title">แก้วแนะนำวันนี้</h2>' +
       '<a class="drink-card" href="#/drink"><span class="mr-art">' + A.drinkArt(dp.drink) + '</span><span class="dc-t"><b>' + esc(dp.drink.name) + '</b><small>' + esc(dp.cafe.name) + ' · ฿' + dp.drink.price + '</small><small class="why">' + esc(dp.reasons[0]) + '</small></span>' + I('chevron-right', 20) + '</a>' +
       eventsHomeHtml(ses) + momentsHtml(ses) +
-      '<h2 class="sec-title">' + I('gem', 20) + 'Hidden Nearby</h2>' +
-      '<a class="drink-card" href="#/hidden"><span class="dc-ic">' + I('gem', 26) + '</span><span class="dc-t"><b>' + near.length + ' cafés discovered</b><small>' + (near.slice(0, 2).map((s) => esc(s.cafe.name)).join(' · ') || 'ลองเปิดดูร้านลับทั้งหมด') + '</small></span>' + I('chevron-right', 20) + '</a>';
+      '<h2 class="sec-title">ร้านลับใกล้คุณ</h2>' +
+      '<a class="drink-card" href="#/hidden"><span class="dc-ic">' + I('gem', 26) + '</span><span class="dc-t"><b>ดูร้านลับ' + (near.length ? ' ' + near.length + ' ร้าน' : 'ทั้งหมด') + '</b><small>' + esc(near.slice(0, 2).map((s) => s.cafe.name).join(' · ')) + '</small></span>' + I('chevron-right', 20) + '</a>';
   }
 
   // “อื่นๆ”: cafés whose owner wrote something close to what the customer typed — listed on their own so they are found even when the usual ranking puts them lower
@@ -275,33 +272,31 @@
     const st = S.get(), ses = session();
     const tiles = D.MOODS.map((m) => {
       const on = draftMoods.includes(m.id);
-      return '<button class="mood-tile' + (on ? ' on' : '') + '" data-act="toggle-mood" data-id="' + m.id + '" aria-pressed="' + on + '" style="--m:' + m.hue + '">' +
-        '<span class="mt-ic">' + I(m.icon, 22) + '</span><span class="mt-t"><b>' + m.short + '</b><small>' + esc(m.thShort) + '</small></span>' +
+      return '<button class="mood-tile' + (on ? ' on' : '') + '" data-act="toggle-mood" data-id="' + m.id + '" aria-pressed="' + on + '">' +
+        '<span class="mt-ic">' + I(m.icon, 20) + '</span><span class="mt-t"><b>' + esc(m.th) + '</b></span>' +
         '<span class="mt-ck">' + I('check', 14) + '</span></button>';
-    }).join('') +
-      // "อื่นๆ": the mood isn't one of the eight → say it in your own words (opens the sentence box below)
-      '<button class="mood-tile other' + (draftText ? ' on' : '') + '" data-act="other-mood" aria-pressed="' + !!draftText + '" aria-controls="moodText" style="--m:#8A7664">' +
-      '<span class="mt-ic">' + I('sparkles', 22) + '</span><span class="mt-t"><b>Other · อื่นๆ</b><small>ไม่ตรงกับที่มี — เล่าเป็นคำพูดของคุณเอง</small></span><span class="mt-ck">' + I('check', 14) + '</span></button>';
+    }).join('');
     const ex = ['อยากนั่งเงียบ ๆ คนเดียว อ่านหนังสือ แล้วอยากได้ร้านบรรยากาศดี', 'นัดเพื่อนถ่ายรูป อยากได้ร้านที่มีต้นไม้และแสงสวย ๆ', 'อยากหามัทฉะอร่อย ๆ ร้านลับ ไม่ค่อยมีคนรู้', 'แอ่วชิว ๆ นั่งยาว ฟีลบ้านสวน'];
     const exChips = ex.map((t, i) => '<button class="chip"' + (i === 3 ? ' data-new="10"' : '') + ' data-act="example" data-i="' + i + '">' + esc(t) + '</button>').join('');
     const persona = ses.profile
       ? 'จับคู่กับ <a href="#/profile"><strong>' + esc(D.ARCHETYPE_BY_ID[ses.profile.archetype].name) + '</strong></a> ของคุณ'
       : '<a href="#/quiz/0">ทำ Quiz เพื่อให้แนะนำแม่นขึ้น</a>';
     return { nav: true, html:
-      '<header class="hero-top ambient"><div class="topbar between"><span class="brand">' + I('coffee', 20) + 'Café Mood</span>' + weatherChip() + '</div>' +
-      '<h1 class="display sm">' + greeting() + (st.name ? ', ' + esc(st.name) : '') + '.</h1>' +
-      '<p class="lead sm">' + I(W.ctx.icon, 18, 'inl') + ' ' + esc(W.ctx.label) + (W.ctx.temp != null ? ' · ' + W.ctx.temp + '°C' : '') + '</p>' +
-      '<a class="search fake" href="#/search">' + I('search', 20) + '<span>ค้นหาร้าน ย่าน เมนู</span></a></header>' +
-      '<section id="homeMain" class="pad rise">' + CM.dev.newsHtml() + '<h2 class="sec-title first">Your mood today?</h2>' +
-      '<div class="mood-grid compact" role="group" aria-label="เลือก Mood ของวันนี้ (สูงสุด 3 อย่าง)">' + tiles + '</div>' +
-      '<details class="tell"' + (draftText ? ' open' : '') + '><summary>' + I('sparkles', 18) + 'หรือเล่าให้ฟังเป็นประโยค</summary>' +
+      '<header class="hero-top home-header"><div class="topbar between"><span class="brand">' + I('coffee', 20) + 'Café Mood</span>' + weatherChip() + '</div>' +
+      '<div class="home-heading"><h1 class="display">' + greeting() + (st.name ? ' ' + esc(st.name) : '') + '</h1>' +
+      '<a class="search fake" href="#/search">' + I('search', 20) + '<span>ค้นหาร้าน ย่าน หรือเมนู</span></a></div></header>' +
+      '<div id="homeMain" class="pad rise">' + CM.dev.newsHtml() + '<section class="mood-panel" aria-labelledby="moodTitle">' +
+      '<div><h2 id="moodTitle" class="sec-title">วันนี้อยากไปคาเฟ่ทำอะไร?</h2>' +
+      '<p class="muted small" id="moodHint">เลือกได้สูงสุด 3 อย่าง</p></div>' +
+      '<div class="mood-grid" role="group" aria-labelledby="moodTitle" aria-describedby="moodHint">' + tiles + '</div>' +
+      '<details class="tell"' + (draftText ? ' open' : '') + '><summary>เล่าด้วยคำของคุณ' + I('chevron-down', 18) + '</summary>' +
       '<div class="field"><label for="moodText" class="sr">เล่าว่าวันนี้เป็นยังไง</label>' +
       '<textarea id="moodText" rows="3" maxlength="240" aria-describedby="moodError" placeholder="เช่น วันนี้อยากนั่งเงียบ ๆ คนเดียว อ่านหนังสือ แล้วอยากได้ร้านบรรยากาศดี">' + esc(draftText) + '</textarea>' +
       '<div class="examples">' + exChips + '</div>' +
       '<p id="moodError" class="error" role="alert" hidden></p>' +
       '<button class="btn primary block" data-act="find">อ่าน mood ของฉัน</button></div></details>' +
-      '<p class="muted small persona-line">' + persona + '</p>' +
-      '<div id="today" class="today">' + homeBody() + '</div></section>' };
+      '<p class="muted small persona-line">' + persona + '</p></section>' +
+      '<section id="today" class="today">' + homeBody() + '</section></div>' };
   }
 
   /* ---------- ② Discover (explore hub) + lenses ---------- */
@@ -349,8 +344,8 @@
       ['pin', 'ร้านท้องถิ่น', all.filter((c) => c.local).length + ' ร้านพื้นถิ่นภาคเหนือ/ใต้ และตลาดนัดคาเฟ่', '#/lens/local', 9]
     ].map((r) => '<a class="lens-card"' + (r[4] ? ' data-new="' + r[4] + '"' : '') + ' href="' + r[3] + '"><span class="lens-ic">' + I(r[0], 26) + '</span><span class="lc-t"><b>' + r[1] + '</b><small>' + esc(r[2]) + '</small></span>' + I('chevron-right', 20) + '</a>').join('');
     return { nav: true, html:
-      '<header class="hero-top ambient"><div class="topbar between"><span class="brand">' + I('compass', 20) + 'Discover</span>' + weatherChip() + '</div>' +
-      '<h1 class="display">สำรวจคาเฟ่<br>แบบไม่ซ้ำเดิม</h1><p class="lead sm">เลือกมุมมองที่อยากเล่นวันนี้</p></header>' +
+      '<header class="hero-top"><div class="topbar between"><span class="brand">' + I('compass', 20) + 'สำรวจ</span>' + weatherChip() + '</div>' +
+      '<h1 class="display">สำรวจคาเฟ่</h1></header>' +
       '<section class="pad rise"><div class="list lens">' + rows + '</div></section>' };
   }
 
@@ -909,15 +904,16 @@
   }
 
   /* ---------- nav / router ---------- */
-  const TABS = [['home', 'home', 'Home'], ['discover', 'compass', 'Discover'], ['map', 'map', 'Map'], ['passport', 'stamp', 'Passport'], ['profile', 'user', 'Profile']];
+  const TABS = [['home', 'home', 'หน้าหลัก'], ['discover', 'compass', 'สำรวจ'], ['map', 'map', 'แผนที่'], ['passport', 'stamp', 'พาสปอร์ต'], ['profile', 'user', 'โปรไฟล์']];
   const TAB_OF = { login: 'profile', signup: 'profile', store: 'profile', dev: 'profile', favorites: 'profile', code: 'profile', account: 'profile', contact: 'profile', results: 'home', hidden: 'discover', lens: 'discover', drink: 'discover', events: 'discover', event: 'discover', fest: 'discover', new: 'profile', tickets: 'profile', line: 'profile', plus: 'profile', wrapped: 'passport', gift: 'profile', notes: 'profile', smart: 'profile', trip: 'profile', export: 'passport', wshare: 'passport' };
   function navHtml(route) {
     const cur = TAB_OF[route] || route;
-    return TABS.map((t) => '<a class="tab" href="#/' + t[0] + '"' + (cur === t[0] ? ' aria-current="page"' : '') + '>' + I(t[1], 24) + '<span>' + t[2] + '</span></a>').join('');
+    return '<a class="brand nav-brand" href="#/home">' + I('coffee', 22) + 'Café Mood</a>' +
+      TABS.map((t) => '<a class="tab" href="#/' + t[0] + '"' + (cur === t[0] ? ' aria-current="page"' : '') + '>' + I(t[1], 22) + '<span>' + t[2] + '</span></a>').join('');
   }
 
   // Theme: '' = follow the device, 'light' / 'dark' = user choice (kept in its own key so the head script can read it before paint).
-  const THEME_BAR = { light: '#F5EDE2', dark: '#17110D' };
+  const THEME_BAR = { light: '#F7F4EC', dark: '#17110D' };
   const theme = () => { try { return localStorage.getItem('cafemood.theme') || ''; } catch (e) { return ''; } };
   function applyTheme(t, keep) {
     // keep = boot call: only sync the page, never rewrite storage (a failed read must not erase the choice)
@@ -1143,10 +1139,6 @@
     },
     retake: () => { S.patch({ quizDraft: {}, skipped: false }); go('#/quiz/0'); },
 
-    'other-mood': () => {
-      const d = document.querySelector('details.tell'), t = document.getElementById('moodText'); if (!d || !t) return;
-      d.open = true; setTimeout(() => { t.focus({ preventScroll: true }); d.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
-    },
     'toggle-mood': (el) => {
       const id = el.dataset.id, i = draftMoods.indexOf(id);
       if (i >= 0) draftMoods.splice(i, 1);
