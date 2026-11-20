@@ -757,46 +757,64 @@
   const isFav = (id) => (S.get().favCafes || []).includes(id);
   const mrow = (ic, t, small, val, attrs, tag) => '<' + (tag || 'a') + ' class="mrow" ' + attrs + '><span class="mi">' + I(ic, 20) + '</span><span class="mt"><b>' + t + '</b>' + (small ? '<small>' + small + '</small>' : '') + '</span>' + (val ? '<span class="mv">' + val + '</span>' : '') + I('chevron-right', 18) + '</' + (tag || 'a') + '>';
 
-  function vProfile() {
+  function vProfile(target) {
     const st = S.get(), p = st.profile, a = p && D.ARCHETYPE_BY_ID[p.archetype], me = CM.auth.current();
     const favs = (st.favCafes || []).map((id) => D.CAFE_BY_ID[id]).filter(Boolean), codes = codeHist();
     const stamps = new Set(S.live().map((v) => v.cafeId)).size;
     const loc = st.location.source === 'gps' ? 'ตำแหน่งของคุณ (GPS)' : D.DEMO_CENTER.name;
+    const previous = $('.profile-page', view);
+    const open = previous && previous.dataset.target === (target || '')
+      ? $('.profile-group[open]', previous)?.id : target;
+    const group = (id, icon, title, description, content) =>
+      '<details class="profile-group" name="customer-profile" id="' + id + '"' + (open === id ? ' open' : '') + '><summary>' +
+      '<span class="profile-group-icon">' + I(icon, 20) + '</span><span><b>' + title + '</b><small>' + description +
+      '</small></span>' + I('chevron-down', 18) + '</summary><div class="profile-group-body">' + content + '</div></details>';
+    const quick = (icon, title, count, route) => '<a href="#/' + route + '">' + I(icon, 20) + '<b>' + title + '</b><small>' + count + '</small></a>';
     const prefs = favourites().map((f) => '<li><span class="pf-ic">' + I(f[0], 20) + '</span><span class="pf-t"><small>' + f[1] + '</small><b>' + esc(f[2]) + '</b></span></li>').join('');
     const favStrip = favs.length
-      ? '<div class="hscroll favstrip">' + favs.slice(0, 8).map((c) => '<a class="fav-card" href="#/cafe/' + c.id + '"><span class="fc-art">' + A.coverArt(c) + '</span><b>' + esc(c.name) + '</b><small>' + esc(c.area) + '</small></a>').join('') + '</div>'
-      : '<div class="card empty fav-empty">' + I('heart', 26) + '<p><b>ยังไม่มีคาเฟ่โปรด</b></p><p class="muted small">แตะหัวใจที่หน้าร้านเพื่อเก็บไว้ที่นี่</p><a class="btn ghost sm" href="#/discover">ไปสำรวจคาเฟ่</a></div>';
+      ? '<h2 class="sec-title">คาเฟ่โปรด</h2><div class="hscroll favstrip">' + favs.slice(0, 8).map((c) => '<a class="fav-card" href="#/cafe/' + c.id + '"><span class="fc-art">' + A.coverArt(c) + '</span><b>' + esc(c.name) + '</b><small>' + esc(c.area) + '</small></a>').join('') + '</div>'
+      : '';
     const themeOpt = [['', 'ตามเครื่อง', null], ['light', 'สว่าง', 'sun'], ['dark', 'มืด', 'moon']];
-    return { nav: true, html:
-      '<header class="hero-top ambient"><div class="topbar between"><span class="brand">' + I('user', 20) + 'Profile' + CM.plus.badge() + '</span>' + weatherChip() + '</div>' +
-      '<div class="idrow"><label class="avatar pick" for="avatarIn" aria-label="เปลี่ยนรูปโปรไฟล์">' + (st.avatar ? '<img src="' + esc(st.avatar) + '" alt="">' : I(a ? a.icon : 'user', 30)) + '<span class="av-cam" aria-hidden="true">' + I('camera', 13) + '</span><input id="avatarIn" class="sr" type="file" accept="image/png,image/jpeg,image/webp"></label><div class="idtext">' +
-      '<label class="eyebrow" for="nameInput">ชื่อที่ให้เราเรียก</label><input id="nameInput" class="name-in" type="text" maxlength="24" autocomplete="given-name" value="' + esc(st.name || '') + '" placeholder="ใส่ชื่อหรือชื่อเล่น">' +
-      '<a class="persona-pill" href="' + (a ? '#/persona' : '#/quiz/0') + '">' + I(a ? a.icon : 'sparkles', 14) + (a ? esc(a.name) : 'ทำ Quiz เพื่อรู้ Personality') + '</a>' + (st.avatar ? '<button class="btn text sm" data-act="avatar-clear">ลบรูปโปรไฟล์</button>' : '') + '</div></div></header>' +
-      '<section class="pad rise">' +
-      (me ? '<div class="card auth-card"><span class="mi">' + I('user', 20) + '</span><div><b>' + esc(me.name || me.email) + '</b><small>' + esc(me.email) + ' · เข้าสู่ระบบอยู่</small></div><button class="btn ghost sm" data-act="auth-logout">ออกจากระบบ</button></div>' : '<a class="card auth-card" href="#/login"><span class="mi">' + I('user', 20) + '</span><div><b>เข้าสู่ระบบ / สมัครสมาชิก</b><small>เก็บ Passport และโค้ดไว้ในบัญชีของคุณ</small></div>' + I('chevron-right', 18) + '</a>') +
-      '<a class="studio-card" href="#/studio"><span class="sc-ic">' + I('building', 24) + '</span><span class="sc-t"><b>Café Studio</b><small>สำหรับเจ้าของร้าน — จัดการร้าน Quest และ Insight</small></span>' + I('chevron-right', 20) + '</a>' +
-      '<a class="card codecard cc-link" href="#/code"><div class="cc-row"><div><small class="cc-k">โค้ดของฉัน</small><b class="cc-big">' + (codes.length ? codes.length + ' โค้ดที่เก็บไว้' : 'ยังไม่มีโค้ด') + '</b><small class="cc-sub">' + (codes.length ? 'ล่าสุด ' + esc(codes[0].code) + ' · ' : '') + 'แตะเพื่อใส่โค้ดที่ได้จากอีเว้นท์</small></div>' + I('chevron-right', 20) + '</div></a>' +
-      '<div class="sec-row"><h2 class="sec-title">' + I('heart', 20) + 'คาเฟ่โปรด' + (favs.length ? ' <span class="cnt">' + favs.length + '</span>' : '') + '</h2>' + (favs.length ? '<a class="seeall" href="#/favorites">ดูทั้งหมด</a>' : '') + '</div>' + favStrip +
-      '<h2 class="grp-t">เส้นทางของฉัน</h2><div class="card menu">' +
-      mrow('stamp', 'Passport', 'สะสม stamp จากร้านที่ไปมา', stamps + ' ร้าน', 'href="#/passport"') +
+
+    const activity = '<div class="menu">' +
       mrow('star', 'อีเว้นท์ที่บันทึกไว้', 'ดูอีเว้นท์ทั้งหมดของร้าน', (st.savedEvents || []).length + ' งาน', 'href="#/events"') +
       mrow('ticket', 'ตั๋วของฉัน', 'ตั๋วอีเว้นท์ที่ซื้อด้วย PromptPay', (st.tickets || []).length + ' ใบ', 'href="#/tickets"') +
-      mrow(a ? a.icon : 'sparkles', 'Café Personality', a ? esc(a.th) : 'ยังไม่ได้ทำ Quiz', a ? esc(a.name) : '', 'href="' + (a ? '#/persona' : '#/quiz/0') + '"') + '</div>' +
-      '<details class="card fold pf"><summary>' + I('heart', 20) + 'รสนิยมของฉัน' + I('chevron-down', 18) + '</summary><ul class="prefs">' + prefs + '</ul></details>' +
-      '<h2 class="grp-t">Plus & Journal</h2>' + CM.plus.profileCard() + CM.plus.toolsHtml(mrow) + (CM.ent.visible('customer').length ? '<div class="card menu">' + CM.ent.profileRow(mrow) + '</div>' : '') + CM.plus.journalHtml() +
-      '<h2 class="grp-t">การเตือน</h2>' + CM.plus.remindersHtml() +
-      '<div class="card menu" data-new="3">' + mrow('message', 'แจ้งเตือนผ่าน LINE', 'เชื่อม LINE และเลือกหัวข้อที่อยากรับ', st.lineLink ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', 'href="#/line"') + '</div>' +
-      '<h2 class="grp-t">การตั้งค่า</h2><div class="card menu">' +
-      mrow('user', 'ข้อมูลส่วนตัว', 'ชื่อ อีเมล เบอร์โทร LINE', acctFilled() + '/4', 'href="#/account"') +
+      mrow('refresh', a ? 'ทำ Quiz ใหม่' : 'เริ่ม Quiz', 'อัปเดตรสนิยมคาเฟ่ของคุณ', '', 'data-act="retake"', 'button') + '</div>' +
+      favStrip + '<h2 class="sec-title">รสนิยมของฉัน</h2><ul class="prefs">' + prefs + '</ul>';
+    const plus = CM.plus.profileCard() + CM.plus.toolsHtml(mrow) +
+      (CM.ent.visible('customer').length ? '<div class="menu">' + CM.ent.profileRow(mrow) + '</div>' : '') + CM.plus.journalHtml();
+    const notifications = CM.plus.remindersHtml() +
+      '<div class="menu" data-new="3">' + mrow('message', 'แจ้งเตือนผ่าน LINE', 'เชื่อม LINE และเลือกหัวข้อที่อยากรับ', st.lineLink ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', 'href="#/line"') + '</div>';
+    const settings = '<div class="menu">' +
+      mrow('user', 'ข้อมูลส่วนตัว', me ? esc(me.email) : 'ชื่อ อีเมล เบอร์โทร LINE', acctFilled() + '/4', 'href="#/account"') +
       mrow('message', 'ติดต่อเรา', 'อีเมล · LINE · ฝากช่องทางให้เราติดต่อกลับ', '', 'href="#/contact"') +
       '<div class="mrow static stack"><span class="mt"><b>ธีม</b><small>ตามเครื่องจะสลับสว่าง/มืดตามอุปกรณ์</small></span><div class="seg three" role="group" aria-label="ธีม">' +
       themeOpt.map((o) => '<button data-act="set-theme" data-t="' + o[0] + '" aria-pressed="' + (theme() === o[0]) + '" class="' + (theme() === o[0] ? 'on' : '') + '">' + (o[2] ? I(o[2], 18) : '') + o[1] + '</button>').join('') + '</div></div>' +
       '<div class="mrow static"><span class="mt"><b>สั่นตอนเก็บ stamp</b><small>' + (CM.ux.canVibrate() ? 'สั่นเบา ๆ ตอนได้ stamp' : 'เครื่องนี้ยังไม่รองรับ — ใช้ได้ในแอปมือถือจริง') + '</small></span><button class="btn ghost sm' + (CM.ux.hapticOn() ? ' on' : '') + '" data-act="haptic-toggle" aria-pressed="' + CM.ux.hapticOn() + '">' + (CM.ux.hapticOn() ? 'เปิด' : 'ปิด') + '</button></div>' +
       mrow('cloud', 'สภาพอากาศ', esc(W.describe()), 'เปลี่ยน', 'data-act="open-weather"', 'button') +
       mrow('pin', 'พื้นที่', esc(loc), 'ใช้ตำแหน่งฉัน', 'data-act="use-gps"', 'button') +
-      mrow('refresh', 'Quiz', 'ทำใหม่เมื่อรสนิยมเปลี่ยน', '', 'data-act="retake"', 'button') +
-      mrow('lock', 'ผู้พัฒนา (หลังบ้าน)', 'ล็อกอินเพื่อเพิ่มร้านคาเฟ่และประกาศ', CM.dev.isDev() ? 'เข้าสู่ระบบแล้ว' : '', 'href="#/dev"') + '</div>' +
-      '<div class="card menu danger-zone">' + mrow('trash', 'ล้างข้อมูล', 'ลบโปรไฟล์และ Passport ในเครื่องนี้', '', 'data-act="confirm-reset"', 'button') + '</div>' +
+      (me ? mrow('user', 'ออกจากระบบ', '', '', 'data-act="auth-logout"', 'button') : mrow('user', 'เข้าสู่ระบบ / สมัครสมาชิก', '', '', 'href="#/login"')) +
+      '</div><div class="menu danger-zone">' + mrow('trash', 'ล้างข้อมูล', 'ลบโปรไฟล์และ Passport ในเครื่องนี้', '', 'data-act="confirm-reset"', 'button') + '</div>';
+    const owners = '<div class="menu">' +
+      mrow('building', 'Café Studio', 'จัดการร้าน Quest และ Insight', '', 'href="#/studio"') +
+      mrow('lock', 'ผู้พัฒนา (หลังบ้าน)', 'ล็อกอินเพื่อเพิ่มร้านคาเฟ่และประกาศ', CM.dev.isDev() ? 'เข้าสู่ระบบแล้ว' : '', 'href="#/dev"') + '</div>';
+
+    return { nav: true, html:
+      '<header class="hero-top ambient profile-head"><div class="topbar between"><h1 class="brand">' + I('user', 20) + 'โปรไฟล์' + CM.plus.badge() + '</h1>' + weatherChip() + '</div>' +
+      '<div class="idrow"><label class="avatar pick" for="avatarIn" aria-label="เปลี่ยนรูปโปรไฟล์">' + (st.avatar ? '<img src="' + esc(st.avatar) + '" alt="">' : I(a ? a.icon : 'user', 30)) + '<span class="av-cam" aria-hidden="true">' + I('camera', 13) + '</span><input id="avatarIn" class="sr" type="file" accept="image/png,image/jpeg,image/webp"></label><div class="idtext">' +
+      '<label class="eyebrow" for="nameInput">ชื่อที่ให้เราเรียก</label><input id="nameInput" class="name-in" type="text" maxlength="24" autocomplete="given-name" value="' + esc(st.name || '') + '" placeholder="ใส่ชื่อหรือชื่อเล่น">' +
+      '<a class="persona-pill" href="' + (a ? '#/persona' : '#/quiz/0') + '">' + I(a ? a.icon : 'sparkles', 14) + (a ? esc(a.name) : 'ทำ Quiz เพื่อรู้ Personality') + '</a>' + (st.avatar ? '<button class="btn text sm" data-act="avatar-clear">ลบรูปโปรไฟล์</button>' : '') + '</div></div></header>' +
+      '<section class="pad rise profile-page" data-target="' + esc(target || '') + '">' +
+      '<nav class="card profile-quick" aria-label="เมนูด่วนของโปรไฟล์">' +
+      quick('heart', 'คาเฟ่โปรด', favs.length + ' ร้าน', 'favorites') +
+      quick('stamp', 'Passport', stamps + ' ร้าน', 'passport') +
+      quick('gift', 'โค้ดของฉัน', codes.length + ' โค้ด', 'code') + '</nav>' +
+      '<div class="card profile-menu">' +
+      group('activity', 'ticket', 'กิจกรรมและรสนิยม', 'อีเว้นท์ ตั๋ว และร้านที่ชอบ', activity) +
+      group('plus', 'sparkles', 'Plus และเครื่องมือ', 'สมาชิก บันทึก และแผนเที่ยว', plus) +
+      group('notifications', 'bell', 'การแจ้งเตือน', 'เชื่อม LINE และตั้งการเตือน', notifications) +
+      group('settings', 'sliders', 'บัญชีและการตั้งค่า', 'ข้อมูลส่วนตัว ธีม และตำแหน่ง', settings) +
+      group('owners', 'building', 'สำหรับเจ้าของร้านและผู้ดูแล', 'Café Studio และหลังบ้าน', owners) + '</div>' +
       '<p class="muted small center">Café Mood · ต้นแบบเว็บ — ข้อมูลร้านเป็นข้อมูลสมมติเพื่อสาธิต</p></section>' };
   }
 
@@ -963,7 +981,7 @@
       case 'drink': v = vDrink(); break;
       case 'map': v = vMap(); break;
       case 'passport': v = vPassport(); break;
-      case 'profile': v = vProfile(); break;
+      case 'profile': v = vProfile(r.arg); break;
       case 'studio': v = ST.view(r.arg); break;
       case 'dev': v = CM.dev.view(r.arg); break;
       case 'store': v = vStore(); break;

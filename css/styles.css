@@ -881,6 +881,34 @@ a.mrow:active, button.mrow:active { background: var(--surface-2); }
 .fold.pf[open] summary > .ic:last-child { transform: rotate(180deg); }
 @media (max-width: 340px) { .mrow .mv { display: none; } }
 
+/* Customer profile */
+.profile-head { padding-bottom: 16px; }
+.profile-page { gap: 12px; padding-top: 14px; }
+.profile-quick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px; text-align: center; }
+.profile-quick a { display: grid; justify-items: center; align-content: center; gap: 3px; min-height: 78px; padding: 8px 4px; text-decoration: none; line-height: 1.25; }
+.profile-quick a + a { border-inline-start: 1px solid var(--line); }
+.profile-quick .ic { color: var(--accent); }
+.profile-quick b { font-size: 14px; }
+.profile-quick small, .profile-group summary small { color: var(--muted); font-size: 13px; }
+.profile-quick a:active, .profile-group > summary:active { background: var(--surface-2); }
+.profile-menu { padding: 0 12px; }
+.profile-group + .profile-group { border-top: 1px solid var(--line); }
+.profile-group > summary {
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) 18px; align-items: center;
+  gap: 10px; min-height: 62px; padding: 8px 2px; cursor: pointer; list-style: none; line-height: 1.35;
+}
+.profile-group > summary::-webkit-details-marker { display: none; }
+.profile-group > summary b, .profile-group > summary small { display: block; }
+.profile-group-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); }
+.profile-group > summary > .ic { color: var(--muted); }
+.profile-group[open] > summary > .ic { transform: rotate(180deg); }
+.profile-group-body { display: grid; gap: 8px; padding: 4px 0 12px; border-top: 1px solid var(--line); }
+.profile-group-body > .card { box-shadow: none; }
+.profile-group-body > .sec-title { margin-top: 4px; font-size: 17px; }
+.profile-group-body .mrow { gap: 8px; padding-inline: 4px; }
+.profile-group-body .danger-zone { border-top: 1px solid var(--line); }
+.profile-group-body .favstrip { margin-inline: 0; padding-inline: 2px; }
+
 /* ---------- v13: code / account / contact pages ---------- */
 .cc-link { text-decoration: none; color: inherit; display: block; }
 .cc-link:active { background: var(--surface-2); }
