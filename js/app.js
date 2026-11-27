@@ -407,6 +407,9 @@
       '<section class="map-wrap"><div class="map-stage"><div id="map" class="map"></div><button class="locate-btn" id="locateBtn" data-act="locate-me" aria-label="หาตำแหน่งของฉัน">' + I('navigation', 22) + '</button></div><p id="mapCount" class="map-count" aria-live="polite"></p><div id="mapCard" class="pad tight"></div></section>' };
   }
 
+  const mapStyles = { liberty: 'ถนน', positron: 'เรียบ', dark: 'มืด' };
+  const mapStyle = () => Object.hasOwn(mapStyles, S.get().mapStyle) ? S.get().mapStyle : 'liberty';
+
   function initMap() {
     const box = $('#map');
     if (!box) return;
@@ -417,9 +420,26 @@
     const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
     map = L.map(box, { zoomSnap: 0.25, zoomDelta: 0.5, zoomAnimation: motion, fadeAnimation: motion, markerZoomAnimation: motion, inertia: motion }).setView([c.lat, c.lon], 12);
     L.control.scale({ imperial: false }).addTo(map);
-    let tileFail = 0;
+    const owner = map;
+    let vector;
+    function fallback() {
+      if (owner !== map) return;
+      if (vector && map.hasLayer(vector)) map.removeLayer(vector);
+      let tileFail = 0;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map)
       .on('tileerror', () => { if (++tileFail === 3) box.insertAdjacentHTML('afterend', '<p class="map-note" role="status">โหลดพื้นแผนที่ไม่ได้ — OpenStreetMap ต้องเปิดผ่านเว็บ https (เช่น GitHub Pages) หรือ localhost ถ้าเปิดไฟล์ตรง ๆ หรืออยู่ในหน้าตัวอย่างจะเห็นแต่หมุด</p>'); });
+    }
+    if (window.maplibregl && L.maplibreGL) {
+      try {
+        vector = L.maplibreGL({ style: 'https://tiles.openfreemap.org/styles/' + mapStyle(),
+          attribution: '<a href="https://openfreemap.org/">OpenFreeMap</a> · © OpenMapTiles · © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+        vector.addTo(map);
+        const gl = vector.getMaplibreMap();
+        const onError = () => { gl.off('error', onError); fallback(); };
+        gl.on('error', onError);
+        gl.once('load', () => gl.off('error', onError));
+      } catch { fallback(); }
+    } else fallback();
     const loc0 = S.get().location;
     if (loc0.source === 'gps') showMe(loc0);
     drawMarkers(true);
@@ -795,6 +815,8 @@
       '<div class="mrow static stack"><span class="mt"><b>ธีม</b><small>ตามเครื่องจะสลับสว่าง/มืดตามอุปกรณ์</small></span><div class="seg three" role="group" aria-label="ธีม">' +
       themeOpt.map((o) => '<button data-act="set-theme" data-t="' + o[0] + '" aria-pressed="' + (theme() === o[0]) + '" class="' + (theme() === o[0] ? 'on' : '') + '">' + (o[2] ? I(o[2], 18) : '') + o[1] + '</button>').join('') + '</div></div>' +
       '<div class="mrow static"><span class="mt"><b>สั่นตอนเก็บ stamp</b><small>' + (CM.ux.canVibrate() ? 'สั่นเบา ๆ ตอนได้ stamp' : 'เครื่องนี้ยังไม่รองรับ — ใช้ได้ในแอปมือถือจริง') + '</small></span><button class="btn ghost sm' + (CM.ux.hapticOn() ? ' on' : '') + '" data-act="haptic-toggle" aria-pressed="' + CM.ux.hapticOn() + '">' + (CM.ux.hapticOn() ? 'เปิด' : 'ปิด') + '</button></div>' +
+      '<label class="mrow"><b>สไตล์แผนที่</b><select id="mapStyle">' + Object.entries(mapStyles).map(([id, label]) =>
+        '<option value="' + id + '"' + (mapStyle() === id ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label>' +
       mrow('cloud', 'สภาพอากาศ', esc(W.describe()), 'เปลี่ยน', 'data-act="open-weather"', 'button') +
       mrow('pin', 'พื้นที่', esc(loc), 'ใช้ตำแหน่งฉัน', 'data-act="use-gps"', 'button') +
       (me ? mrow('user', 'ออกจากระบบ', '', '', 'data-act="auth-logout"', 'button') : mrow('user', 'เข้าสู่ระบบ / สมัครสมาชิก', '', '', 'href="#/login"')) +
@@ -1393,6 +1415,7 @@
     fCount();
   });
   document.addEventListener('change', (e) => {
+    if (e.target.id === 'mapStyle' && Object.hasOwn(mapStyles, e.target.value)) S.patch({ mapStyle: e.target.value });
     if (e.target.id !== 'avatarIn') return;
     const f = e.target.files && e.target.files[0];
     if (!f) return;
