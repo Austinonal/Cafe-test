@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Guest café journey</title>
+<iframe title="Café Mood" src="../index.html#/welcome" width="390" height="844"></iframe>
+<pre id="result">Running…</pre>
+<script>
+const frame = document.querySelector('iframe');
+async function waitFor(selector) {
+  for (let i = 0; i < 100; i++) {
+    const el = frame.contentDocument.querySelector(selector);
+    if (el) return el;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw Error('Missing ' + selector);
+}
+async function check() {
+  (await waitFor('a.btn[href="#/home"]')).click();
+  (await waitFor('[data-act="toggle-mood"][data-id="focus"]')).click();
+  const card = await waitFor('#today .hero-card');
+  if (!card.querySelector('.why')?.textContent.trim()) throw Error('Missing match reason');
+  card.click();
+  await waitFor('body[data-route="cafe"]');
+  frame.contentWindow.location.hash = '/profile';
+  await waitFor('body[data-route="login"]');
+}
+check().then(() => result.textContent = 'PASS').catch(err => result.textContent = 'FAIL ' + err);
+</script>
