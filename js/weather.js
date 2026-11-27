@@ -70,6 +70,7 @@
     } catch (e) { return null; }
   }
 
+  let latestRefresh = 0;
   const W = {
     ctx: initial(),
     listeners: [],
@@ -77,6 +78,7 @@
     emit() { W.listeners.forEach((fn) => fn(W.ctx)); },
 
     async refresh() {
+      const request = ++latestRefresh;
       const st = store.get();
       if (st.weatherOverride && SIM[st.weatherOverride]) {
         W.ctx = make(Object.assign({ source: 'sim' }, SIM[st.weatherOverride]));
@@ -87,6 +89,7 @@
       W.emit();
       if (W.ctx.source === 'live' && st.weatherCache && Date.now() - st.weatherCache.ts < 5 * 60 * 1000) return;
       for (let attempt = 0; attempt < 2; attempt++) {
+        if (request !== latestRefresh) return;
         try {
           const { lat, lon } = st.location;
           const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
@@ -97,18 +100,17 @@
           clearTimeout(t);
           if (!res.ok) throw new Error('weather ' + res.status);
           const c = (await res.json()).current;
-          // the user may have switched to a simulated weather while we were waiting
-          if (store.get().weatherOverride) return;
+          if (request !== latestRefresh || store.get().weatherOverride) return;
           const kind = kindFromCode(c.weather_code, c.temperature_2m);
           const pm = await airQuality(lat, lon);   // null when the air-quality service is unreachable
-          if (store.get().weatherOverride) return;
+          if (request !== latestRefresh || store.get().weatherOverride) return;
           store.patch({ weatherCache: { ts: Date.now(), kind, night: c.is_day === 0, temp: c.temperature_2m, pm, lat, lon } });
           W.ctx = make({ kind, night: c.is_day === 0, temp: c.temperature_2m, pm, hour: nowHour(), source: 'live' });
           W.emit();
           return;
         } catch (e) {
           /* offline / blocked — keep the estimate; retry once */
-          await new Promise((r) => setTimeout(r, 2500));
+          if (attempt === 0 && request === latestRefresh) await new Promise((r) => setTimeout(r, 2500));
         }
       }
     },
