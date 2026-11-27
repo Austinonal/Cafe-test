@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><iframe title="Map" width="390" height="844" src="../index.html#/map"></iframe><pre id="result">Running…</pre>
+<script>
+document.querySelector('iframe').onload = async function () {
+  try {
+    const w = this.contentWindow, doc = w.document;
+    const box = doc.querySelector('#map');
+    if (!box?.classList.contains('leaflet-container')) throw Error('Map did not mount');
+    doc.querySelector('.leaflet-marker-icon[title]').click();
+    const selected = doc.querySelector('#mapCard a').hash;
+    const pane = box.querySelector('.leaflet-map-pane');
+    const before = pane.style.transform;
+    box.focus();
+    box.dispatchEvent(new w.KeyboardEvent('keydown', { keyCode: 39, bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const after = pane.style.transform;
+    if (after === before) throw Error('Keyboard pan did not move the map');
+    await w.CM.weather.setOverride('rain');
+    if (box !== doc.querySelector('#map') || pane.style.transform !== after ||
+        doc.querySelector('#mapCard a')?.hash !== selected) throw Error('Weather reset the map');
+    result.textContent = 'PASS';
+  } catch (error) { result.textContent = 'FAIL ' + error; }
+};
+</script>
