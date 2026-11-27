@@ -414,7 +414,8 @@
     bindGeoRow();
     if (!window.L) { box.innerHTML = '<div class="map-fallback">' + I('map', 28) + '<p>ต้องต่ออินเทอร์เน็ตเพื่อโหลดแผนที่</p><a class="btn ghost" href="#/discover">ดูเป็นรายการแทน</a></div>'; return; }
     const c = center();
-    map = L.map(box, { zoomControl: true, dragging: true, tap: true, scrollWheelZoom: true, touchZoom: true, doubleClickZoom: true, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false }).setView([c.lat, c.lon], 12);
+    const motion = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map = L.map(box, { zoomSnap: 0.25, zoomDelta: 0.5, zoomAnimation: motion, fadeAnimation: motion, markerZoomAnimation: motion, inertia: motion }).setView([c.lat, c.lon], 12);
     L.control.scale({ imperial: false }).addTo(map);
     let tileFail = 0;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map)
@@ -466,7 +467,7 @@
       S.patch({ location: l });
       if (W.refresh) W.refresh().catch(() => {});
       showMe(l, p.coords.accuracy);
-      map.setView([l.lat, l.lon], Math.max(map.getZoom(), 15), { animate: false });
+      map.setView([l.lat, l.lon], Math.max(map.getZoom(), 15), { animate: map.options.zoomAnimation });
       btn.classList.add('on');
       toast(!nearAnyCafe(l) ? 'พบตำแหน่งแล้ว แต่ยังไม่มีคาเฟ่ในแอปใกล้คุณ' : 'พบตำแหน่งของคุณแล้ว (±' + Math.round(p.coords.accuracy) + ' ม.)');
     } catch (e) {
@@ -478,6 +479,7 @@
 
   function drawMarkers(fit) {
     if (!map) return;
+    const selected = !fit && $('#mapCard a[href]')?.getAttribute('href');
     mapMarkers.forEach((m) => m.remove());
     mapMarkers = [];
     const ses = session();
@@ -495,7 +497,8 @@
       mapMarkers.push(m);
     });
     $('#mapCount').textContent = all.length ? 'แสดง ' + shown.length + ' จาก ' + all.length + ' ร้าน · เลขบนหมุด = Match วันนี้' : 'ยังไม่มีคาเฟ่ในระบบ';
-    $('#mapCard').innerHTML = shown.length || !all.length ? '' : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ลองปิดตัวกรองบางอัน</p></div>';
+    const keep = selected && shown.find((s) => selected === '#/cafe/' + s.cafe.id);
+    $('#mapCard').innerHTML = keep ? rowCard(keep) : shown.length || !all.length ? '' : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ลองปิดตัวกรองบางอัน</p></div>';
     const near = shown.filter((s) => E.distKm(center(), s.cafe) < 40), fitSet = geo.prov || geo.area || mapFilters.has('local') || !near.length ? shown : near;   // v23: Bangkok first, so the far-away local cafés don't zoom the map out to the whole country
     if (fit && shown.length) map.fitBounds(L.latLngBounds(fitSet.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
   }
@@ -1035,7 +1038,10 @@
     if (first) return;   // the boot render already used this context
     const n = parseRoute().name;
     if (sheetOpen || n === 'quiz' || n === 'welcome' || n === 'persona' || n === 'intro') return;
-    render(true);
+    if (n === 'map' && map) {
+      $('[data-weather-chip]').outerHTML = weatherChip();
+      drawMarkers(false);
+    } else render(true);
     CM.ux.say('อากาศเปลี่ยนเป็น ' + c.label + ' อัปเดตคำแนะนำแล้ว');
   });
 
