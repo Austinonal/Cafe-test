@@ -119,9 +119,11 @@
       '<li>' + I('sparkles', 20) + '<div><b>Mood วันนี้</b><span>รู้สึกยังไง อยากทำอะไร</span></div></li>' +
       '<li>' + I('cloud-rain', 20) + '<div><b>สภาพอากาศ</b><span>เราคิดให้เอง ไม่ต้องกด</span></div></li>' +
       '<li>' + I('user', 20) + '<div><b>นิสัยคาเฟ่ของคุณ</b><span>Quiz สั้น ๆ 10 ข้อ</span></div></li></ul>' +
-      (CM.auth.current()
-        ? '<button class="btn primary lg" data-act="start-quiz">เริ่มค้นหา Café Personality ของฉัน</button><button class="btn text" data-act="skip-quiz">ข้ามไปก่อน เริ่มเลย</button>'
-        : '<a class="btn primary lg" href="#/signup">สมัครสมาชิก</a><a class="btn ghost lg" href="#/login">เข้าสู่ระบบ</a><p class="muted small center">สมัครหรือเข้าสู่ระบบก่อน จึงจะเริ่มใช้งานได้</p>') +
+      '<a class="btn primary lg" href="#/home">หาคาเฟ่วันนี้</a><button class="btn text" data-act="start-quiz">ค้นหา Café Personality ของฉัน</button>' +
+      (CM.auth.current() ? '' : '<a class="btn ghost" href="#/login">เข้าสู่ระบบ</a><a class="btn text" href="#/signup">สมัครสมาชิก</a>') +
+      '<details><summary>สำหรับเจ้าของร้านและผู้ดูแล</summary>' + '<div class="menu">' +
+      mrow('building', 'Café Studio', 'จัดการร้าน Quest และ Insight', '', 'href="#/studio"') +
+      mrow('lock', 'ผู้พัฒนา (หลังบ้าน)', 'ล็อกอินเพื่อเพิ่มร้านคาเฟ่และประกาศ', CM.dev.isDev() ? 'เข้าสู่ระบบแล้ว' : '', 'href="#/dev"') + '</div>' + '</details>' +
       '</section>' };
   }
 
@@ -167,7 +169,7 @@
     const c = s.cafe;
     return '<a class="hero-card" href="#/cafe/' + c.id + '"><div class="hc-cover">' + A.coverArt(c) + '<span class="badge solid">Top pick</span></div>' +
       '<div class="hc-body"><div class="hc-head"><div><h2>' + esc(c.name) + '</h2><p class="meta">' + I('pin', 14) + esc(c.area) + ' · ' + fmtDist(c) + ' · ' + priceText(c) + '</p></div>' + ring(s.match, 64) + '</div>' +
-      '<ul class="reasons">' + s.reasons.map((r) => '<li>' + I('check', 16) + esc(r) + '</li>').join('') + '</ul><div class="badges">' + badges(s) + '</div></div></a>';
+      '<p class="why">' + esc(s.reasons[0]) + '</p><div class="badges">' + badges(s) + '</div></div></a>';
   }
 
   // Search: name, area, tagline, drink names. Reuses rank() so each hit keeps its Match % card.
@@ -513,7 +515,6 @@
       night: 'ค่ำแล้ว — ร้านที่เปิดดึกและบรรยากาศอบอุ่นได้คะแนนเพิ่ม'
     }[W.ctx.night && W.ctx.kind !== 'rain' ? 'night' : W.ctx.kind];
     const topC = top.cafe;
-    const reasons = top.reasons.map((r) => '<li>' + I('check', 16) + esc(r) + '</li>').join('');
     return { nav: true, html:
       '<header class="hero-top ambient"><div class="topbar between">' + backBtn('#/home') + weatherChip() + '</div>' +
       '<p class="eyebrow">Your Café Mood</p>' +
@@ -523,7 +524,7 @@
       '<section class="pad rise">' +
       '<a class="hero-card" href="#/cafe/' + topC.id + '"><div class="hc-cover">' + A.coverArt(topC) + '<span class="badge solid">Top pick</span></div>' +
       '<div class="hc-body"><div class="hc-head"><div><h2>' + esc(topC.name) + '</h2><p class="meta">' + I('pin', 14) + esc(topC.area) + ' · ' + fmtDist(topC) + ' · ' + priceText(topC) + '</p></div>' + ring(top.match, 64) + '</div>' +
-      '<ul class="reasons">' + reasons + '</ul><div class="badges">' + badges(top) + '</div>' +
+      '<p class="why">' + esc(top.reasons[0]) + '</p><div class="badges">' + badges(top) + '</div>' +
       '<span class="btn primary block">ดูร้านนี้ ' + I('chevron-right', 18) + '</span></div></a>' +
       '<h2 class="sec-title">ร้านอื่นที่เข้ากับคุณวันนี้</h2><div class="list">' + rest.map((s) => rowCard(s)).join('') + '</div>' +
       '<div class="teasers"><a class="teaser" href="#/hidden"><span class="tz-ic">' + I('gem', 20) + '</span><small>Hidden Café</small><b>ลองร้านลับ</b><span>รีวิวน้อย คนกลับมาซ้ำเยอะ</span></a>' +
@@ -717,7 +718,7 @@
       '<p class="muted small">' + st.cafes.length + ' / ' + D.CAFES.length + ' ร้านในเดโม</p>' +
       '<div class="level"><div class="lv-h"><b>Lv.' + lv.level + ' ' + esc(lv.name) + '</b><span>' + st.xp + (lv.next ? ' / ' + lv.next : '') + ' XP</span></div>' +
       '<div class="progress" role="progressbar" aria-label="ความคืบหน้าเลเวล" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + lv.pct + '"><span style="width:' + lv.pct + '%"></span></div></div></header>' +
-      '<section class="pad rise">' + (st.cafes.length ? '<div class="stat-grid">' + tiles + '</div>' : '') + CM.plus.passportTeaser() +
+      '<section class="pad rise">' + (st.cafes.length ? '<div class="stat-grid">' + tiles + '</div>' : '') +
       (st.cafes.length || !D.CAFES.length ? '' : '<div class="card first-stamp"><div class="fs-art">' + A.stamp(D.CAFES[0], {}) + '</div><h2>หน้าแรกของพาสปอร์ตยังว่างอยู่</h2><p class="muted">แวะร้านไหนก็ได้ แล้วกด Check in จะได้ stamp ใบแรก</p><a class="btn primary lg" href="#/home">หาคาเฟ่วันนี้</a></div>') +
       (st.cafes.length ? '<h2 class="sec-title">' + I('trophy', 20) + 'Achievements <small>' + ach.filter((a) => a.done).length + '/' + ach.length + '</small></h2><ul class="ach-grid">' + hot.map(achItem).join('') + '</ul>' + fold(ach.length - hot.length, '<ul class="ach-grid">' + ach.filter((a) => !hot.includes(a)).map(achItem).join('') + '</ul>') +
         '<h2 class="sec-title">Café Collection <small>' + st.cafes.length + '/' + D.CAFES.length + '</small></h2><div class="coll-grid">' + recentIds.map((id) => collItem(D.CAFE_BY_ID[id])).join('') + '</div>' + fold(D.CAFES.length - recentIds.length, '<div class="coll-grid">' + D.CAFES.filter((c) => !recentIds.includes(c.id)).map(collItem).join('') + '</div>')
@@ -781,7 +782,7 @@
       mrow('ticket', 'ตั๋วของฉัน', 'ตั๋วอีเว้นท์ที่ซื้อด้วย PromptPay', (st.tickets || []).length + ' ใบ', 'href="#/tickets"') +
       mrow('refresh', a ? 'ทำ Quiz ใหม่' : 'เริ่ม Quiz', 'อัปเดตรสนิยมคาเฟ่ของคุณ', '', 'data-act="retake"', 'button') + '</div>' +
       favStrip + '<h2 class="sec-title">รสนิยมของฉัน</h2><ul class="prefs">' + prefs + '</ul>';
-    const plus = CM.plus.profileCard() + CM.plus.toolsHtml(mrow) +
+    const plus = '<div class="menu">' + mrow('sparkles', 'Café Wrapped', 'สรุปการไปคาเฟ่ของคุณ', '', 'href="#/wrapped"') + '</div>' + CM.plus.profileCard() + CM.plus.toolsHtml(mrow) +
       (CM.ent.visible('customer').length ? '<div class="menu">' + CM.ent.profileRow(mrow) + '</div>' : '') + CM.plus.journalHtml();
     const notifications = CM.plus.remindersHtml() +
       '<div class="menu" data-new="3">' + mrow('message', 'แจ้งเตือนผ่าน LINE', 'เชื่อม LINE และเลือกหัวข้อที่อยากรับ', st.lineLink ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', 'href="#/line"') + '</div>';
@@ -795,9 +796,6 @@
       mrow('pin', 'พื้นที่', esc(loc), 'ใช้ตำแหน่งฉัน', 'data-act="use-gps"', 'button') +
       (me ? mrow('user', 'ออกจากระบบ', '', '', 'data-act="auth-logout"', 'button') : mrow('user', 'เข้าสู่ระบบ / สมัครสมาชิก', '', '', 'href="#/login"')) +
       '</div><div class="menu danger-zone">' + mrow('trash', 'ล้างข้อมูล', 'ลบโปรไฟล์และ Passport ในเครื่องนี้', '', 'data-act="confirm-reset"', 'button') + '</div>';
-    const owners = '<div class="menu">' +
-      mrow('building', 'Café Studio', 'จัดการร้าน Quest และ Insight', '', 'href="#/studio"') +
-      mrow('lock', 'ผู้พัฒนา (หลังบ้าน)', 'ล็อกอินเพื่อเพิ่มร้านคาเฟ่และประกาศ', CM.dev.isDev() ? 'เข้าสู่ระบบแล้ว' : '', 'href="#/dev"') + '</div>';
 
     return { nav: true, html:
       '<header class="hero-top ambient profile-head"><div class="topbar between"><h1 class="brand">' + I('user', 20) + 'โปรไฟล์' + CM.plus.badge() + '</h1>' + weatherChip() + '</div>' +
@@ -814,7 +812,7 @@
       group('plus', 'sparkles', 'Plus และเครื่องมือ', 'สมาชิก บันทึก และแผนเที่ยว', plus) +
       group('notifications', 'bell', 'การแจ้งเตือน', 'เชื่อม LINE และตั้งการเตือน', notifications) +
       group('settings', 'sliders', 'บัญชีและการตั้งค่า', 'ข้อมูลส่วนตัว ธีม และตำแหน่ง', settings) +
-      group('owners', 'building', 'สำหรับเจ้าของร้านและผู้ดูแล', 'Café Studio และหลังบ้าน', owners) + '</div>' +
+      '</div>' +
       '<p class="muted small center">Café Mood · ต้นแบบเว็บ — ข้อมูลร้านเป็นข้อมูลสมมติเพื่อสาธิต</p></section>' };
   }
 
@@ -946,14 +944,15 @@
   function applyAmbient() { document.documentElement.dataset.ambient = W.ctx.ambient; }
 
   // Open without a customer account: the landing + auth pages, and the owner / developer consoles (they have their own login)
+  const BROWSE = ['home', 'results', 'cafe', 'discover', 'search', 'map', 'lens', 'hidden', 'drink', 'intro', 'quiz', 'persona'];
   const PUBLIC = ['welcome', 'login', 'signup', 'studio', 'dev'];
   // Pages that recommend cafés need at least one café (the developer may have removed the samples before adding real ones)
   const NEEDS_CAFES = ['home', 'discover', 'results', 'lens', 'hidden', 'drink', 'search', 'persona'];   // (the map still opens with no cafés)
   const vEmpty = () => ({ nav: true, html: '<header class="hero-top ambient"><div class="topbar between"><span class="brand">' + I('coffee', 20) + 'Café Mood</span></div><h1 class="display sm">ยังไม่มีคาเฟ่ในระบบ</h1><p class="lead sm">กำลังเตรียมร้านให้คุณ — กลับมาดูใหม่เร็ว ๆ นี้</p></header><section class="pad"><div class="card empty fav-empty">' + I('coffee', 26) + '<p><b>ยังไม่มีร้านให้แนะนำ</b></p><p class="muted small">เมื่อมีคาเฟ่เข้ามา คำแนะนำตาม Mood อากาศ และนิสัยคาเฟ่ของคุณจะขึ้นที่นี่</p></div></section>' });
   function render(keepScroll) {
     const r = parseRoute(), st = S.get();
-    if (!CM.auth.current() && !PUBLIC.includes(r.name)) { location.replace('#/welcome'); return; }   // sign in / sign up first
-    if (!st.profile && !st.skipped && !['welcome', 'intro', 'quiz', 'persona', 'login', 'signup', 'studio', 'dev'].includes(r.name)) { location.replace('#/welcome'); return; }
+    if (!CM.auth.current() && !PUBLIC.includes(r.name) && !BROWSE.includes(r.name)) { location.replace('#/login'); return; }
+    if (!BROWSE.includes(r.name) && !st.profile && !st.skipped && !['welcome', 'intro', 'quiz', 'persona', 'login', 'signup', 'studio', 'dev'].includes(r.name)) { location.replace('#/welcome'); return; }
     if (map) { map.stop(); map.remove(); map = null; mapMarkers = []; }
     let v;
     if (!skelDone && CM.ux.wantSkeleton(r.name)) {   // test switch "โหลดช้า" (and the first weather lookup, see boot)
@@ -1421,7 +1420,7 @@
   CM.ent.install({ H, toast, openSheet, closeSheet, render, backBtn });
   CM.ux.install({ H, toast, openSheet, closeSheet, render, go });
   ST.apply(W.ctx.hour);
-  if (!location.hash) location.replace('#/home');
+  if (!location.hash) location.replace(CM.auth.current() ? '#/home' : '#/welcome');
   stack.push(location.hash);
   trackView();
   applyAmbient();
