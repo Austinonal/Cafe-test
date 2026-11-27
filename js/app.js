@@ -407,7 +407,47 @@
       '<section class="map-wrap"><div class="map-stage"><div id="map" class="map"></div><button class="locate-btn" id="locateBtn" data-act="locate-me" aria-label="หาตำแหน่งของฉัน">' + I('navigation', 22) + '</button></div><p id="mapCount" class="map-count" aria-live="polite"></p><div id="mapCard" class="pad tight"></div></section>' };
   }
 
-  function initMap() {
+  // Set a website-restricted key to enable Google Maps on this deployment.
+  const googleMapsKey = '';
+  const googleMapId = 'DEMO_MAP_ID';
+  let googleMap, googleMapsLoad;
+
+  function loadGoogleMaps() {
+    if (!googleMapsLoad) googleMapsLoad = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      window.cafeMoodGoogleMapsReady = resolve;
+      script.onerror = reject;
+      script.src = 'https://maps.googleapis.com/maps/api/js?' + new URLSearchParams({
+        key: googleMapsKey, loading: 'async', callback: 'cafeMoodGoogleMapsReady', language: 'th', region: 'TH'
+      });
+      document.head.append(script);
+    });
+    return googleMapsLoad;
+  }
+
+  async function initMap() {
+    const box = $('#map');
+    if (!googleMapsKey || !box) return initLeaflet();
+    try {
+      await loadGoogleMaps();
+      const { Map, RenderingType } = await google.maps.importLibrary('maps');
+      await google.maps.importLibrary('marker');
+      if (!box.isConnected) return;
+      const { lat, lon: lng } = center();
+      googleMap = new Map(box, {
+        center: { lat, lng }, zoom: 12, renderingType: RenderingType.VECTOR, mapId: googleMapId,
+        gestureHandling: 'greedy', mapTypeControl: false, streetViewControl: false, fullscreenControl: false
+      });
+      meMarker = meAcc = null;
+      bindGeoRow();
+      if (S.get().location.source === 'gps') showMe(S.get().location);
+      drawMarkers(true);
+    } catch (error) {
+      if (box.isConnected) initLeaflet();
+    }
+  }
+
+  function initLeaflet() {
     const box = $('#map');
     if (!box) return;
     meMarker = meAcc = null;
@@ -446,6 +486,19 @@
 
   /* my location on the map */
   function showMe(l, acc) {
+    if (googleMap) {
+      const position = { lat: l.lat, lng: l.lon };
+      if (meMarker) meMarker.position = position;
+      else {
+        const dot = document.createElement('div');
+        dot.className = 'me-dot';
+        meMarker = new google.maps.marker.AdvancedMarkerElement({ map: googleMap, position });
+        meMarker.append(dot);
+      }
+      meAcc?.setMap(null);
+      meAcc = acc ? new google.maps.Circle({ map: googleMap, center: position, radius: acc, fillOpacity: .1, strokeColor: '#1F5FBF', clickable: false }) : null;
+      return;
+    }
     const ll = [l.lat, l.lon];
     if (meMarker) meMarker.setLatLng(ll);
     else meMarker = L.marker(ll, { icon: L.divIcon({ className: '', html: '<div class="me-dot"></div>', iconSize: [18, 18] }), interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
@@ -456,7 +509,8 @@
   const getPos = (o) => new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, o));
 
   async function locateMe(btn) {
-    if (!map) return;
+    if (!map && !googleMap) return;
+    const activeMap = googleMap || map;
     if (!navigator.geolocation || !window.isSecureContext) { toast('เปิดแอปผ่าน https (เช่น GitHub Pages) ก่อนถึงจะหาตำแหน่งได้'); return; }
     btn.disabled = true; btn.classList.add('busy');
     try {
@@ -466,8 +520,12 @@
       const l = { lat: p.coords.latitude, lon: p.coords.longitude, source: 'gps' };
       S.patch({ location: l });
       if (W.refresh) W.refresh().catch(() => {});
+      if (activeMap !== (googleMap || map)) return;
       showMe(l, p.coords.accuracy);
-      map.setView([l.lat, l.lon], Math.max(map.getZoom(), 15), { animate: map.options.zoomAnimation });
+      if (googleMap) {
+        googleMap.setZoom(Math.max(googleMap.getZoom(), 15));
+        googleMap.panTo({ lat: l.lat, lng: l.lon });
+      } else map.setView([l.lat, l.lon], Math.max(map.getZoom(), 15), { animate: map.options.zoomAnimation });
       btn.classList.add('on');
       toast(!nearAnyCafe(l) ? 'พบตำแหน่งแล้ว แต่ยังไม่มีคาเฟ่ในแอปใกล้คุณ' : 'พบตำแหน่งของคุณแล้ว (±' + Math.round(p.coords.accuracy) + ' ม.)');
     } catch (e) {
@@ -478,9 +536,9 @@
   }
 
   function drawMarkers(fit) {
-    if (!map) return;
+    if (!map && !googleMap) return;
     const selected = !fit && $('#mapCard a[href]')?.getAttribute('href');
-    mapMarkers.forEach((m) => m.remove());
+    mapMarkers.forEach((m) => { if (googleMap) m.map = null; else m.remove(); });
     mapMarkers = [];
     const ses = session();
     const all = D.CAFES.map((c) => E.scoreCafe(c, ses));
@@ -489,6 +547,17 @@
       (!geo.prov || provOf(s.cafe) === geo.prov) && (!geo.area || s.cafe.area === geo.area));
     shown.forEach((s) => {
       const gem = s.hidden.eligible && s.hidden.score >= 80;
+      if (googleMap) {
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: googleMap, position: { lat: s.cafe.lat, lng: s.cafe.lon },
+          title: s.cafe.name + ' — Match ' + s.match + '%', gmpClickable: true
+        });
+        const pin = new google.maps.marker.PinElement({ glyphText: String(s.match), background: gem ? '#67408B' : '#8A4C2D', glyphColor: '#FFFFFF' });
+        marker.append(pin);
+        marker.addEventListener('gmp-click', () => { $('#mapCard').innerHTML = rowCard(s); });
+        mapMarkers.push(marker);
+        return;
+      }
       const m = L.marker([s.cafe.lat, s.cafe.lon], {
         icon: L.divIcon({ className: '', html: '<div class="pin' + (gem ? ' gem' : '') + '"><span>' + s.match + '</span></div>', iconSize: [40, 40], iconAnchor: [20, 48] }),
         title: s.cafe.name + ' — Match ' + s.match + '%', alt: s.cafe.name
@@ -500,7 +569,16 @@
     const keep = selected && shown.find((s) => selected === '#/cafe/' + s.cafe.id);
     $('#mapCard').innerHTML = keep ? rowCard(keep) : shown.length || !all.length ? '' : '<div class="card empty"><p><b>ไม่มีร้านที่ตรงทุกตัวกรอง</b></p><p class="muted">ลองปิดตัวกรองบางอัน</p></div>';
     const near = shown.filter((s) => E.distKm(center(), s.cafe) < 40), fitSet = geo.prov || geo.area || mapFilters.has('local') || !near.length ? shown : near;   // v23: Bangkok first, so the far-away local cafés don't zoom the map out to the whole country
-    if (fit && shown.length) map.fitBounds(L.latLngBounds(fitSet.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
+    if (fit && shown.length && googleMap) {
+      const bounds = new google.maps.LatLngBounds();
+      fitSet.forEach(({ cafe }) => bounds.extend({ lat: cafe.lat, lng: cafe.lon }));
+      if (!geo.prov && !geo.area) bounds.extend({ lat: center().lat, lng: center().lon });
+      googleMap.fitBounds(bounds, 32);
+      const fitted = googleMap;
+      google.maps.event.addListenerOnce(fitted, 'idle', () => {
+        if (fitted === googleMap && fitted.getZoom() > 14) fitted.setZoom(14);
+      });
+    } else if (fit && shown.length) map.fitBounds(L.latLngBounds(fitSet.map((s) => [s.cafe.lat, s.cafe.lon]).concat(geo.prov || geo.area ? [] : [[center().lat, center().lon]])).pad(.15), { maxZoom: 14, animate: false });
   }
 
   function vResults() {
@@ -956,6 +1034,14 @@
     const r = parseRoute(), st = S.get();
     if (!CM.auth.current() && !PUBLIC.includes(r.name) && !BROWSE.includes(r.name)) { location.replace('#/login'); return; }
     if (!BROWSE.includes(r.name) && !st.profile && !st.skipped && !['welcome', 'intro', 'quiz', 'persona', 'login', 'signup', 'studio', 'dev'].includes(r.name)) { location.replace('#/welcome'); return; }
+    if (googleMap) {
+      mapMarkers.forEach((marker) => { marker.map = null; });
+      if (meMarker) meMarker.map = null;
+      meAcc?.setMap(null);
+      google.maps.event.clearInstanceListeners(googleMap);
+      googleMap = null;
+      mapMarkers = [];
+    }
     if (map) { map.stop(); map.remove(); map = null; mapMarkers = []; }
     let v;
     if (!skelDone && CM.ux.wantSkeleton(r.name)) {   // test switch "โหลดช้า" (and the first weather lookup, see boot)
@@ -1038,7 +1124,7 @@
     if (first) return;   // the boot render already used this context
     const n = parseRoute().name;
     if (sheetOpen || n === 'quiz' || n === 'welcome' || n === 'persona' || n === 'intro') return;
-    if (n === 'map' && map) {
+    if (n === 'map' && (map || googleMap)) {
       $('[data-weather-chip]').outerHTML = weatherChip();
       drawMarkers(false);
     } else render(true);
